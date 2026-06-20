@@ -10,6 +10,7 @@ import {
   alterPartitionAssignments,
   browseMessages,
   createTopic,
+  describeConsumerGroupLag,
   describeCluster,
   listConsumerGroups,
   listPartitionPlacements,
@@ -160,6 +161,11 @@ app.post("/api/clusters/:clusterId/topics", async (request) => {
 app.get("/api/clusters/:clusterId/consumer-groups", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   return listConsumerGroups(getCluster(params.clusterId));
+});
+
+app.get("/api/clusters/:clusterId/consumer-groups/:groupId/lag", async (request) => {
+  const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
+  return describeConsumerGroupLag(getCluster(params.clusterId), params.groupId);
 });
 
 app.post("/api/clusters/:clusterId/messages/produce", async (request) => {

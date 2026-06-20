@@ -11,6 +11,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 - Postgres persistence for audit events and broker collector state.
 - One broker-local collector per broker in the Docker lab.
 - Disk-aware partition rebalance planning from broker collector telemetry.
+- Consumer group lag summaries and topic/partition offset drill-downs.
 - Rules-based advisor agents for UX, security, SRE, governance, and maintainership.
 - A ten-broker Kafka lab in Docker Compose.
 
@@ -55,6 +56,14 @@ Current routes:
 - `GET /api/agents`
 - `GET /api/clusters/:clusterId/agents`
 - `POST /api/clusters/:clusterId/agents/run`
+
+## Consumer Lag
+
+EventHelm calculates consumer lag with Kafka committed offsets and topic log-end offsets:
+
+- `GET /api/clusters/:clusterId/consumer-groups` includes lag totals, topic count, partition count, and unknown offsets per group.
+- `GET /api/clusters/:clusterId/consumer-groups/:groupId/lag` returns topic and partition offset details for drill-downs.
+- The Operator advisor flags consumer groups with active lag or unknown committed offsets.
 
 ## Partition Rebalance
 

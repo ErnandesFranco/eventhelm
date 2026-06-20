@@ -148,6 +148,34 @@ export type ConsumerGroupSummary = {
   protocolType: string;
   state?: string;
   members?: number;
+  lag?: {
+    total: number;
+    topics: number;
+    partitions: number;
+    unknownOffsets: number;
+  };
+};
+
+export type ConsumerGroupLag = {
+  groupId: string;
+  generatedAt: string;
+  state?: string;
+  members?: number;
+  protocolType: string;
+  totalLag: number;
+  unknownOffsets: number;
+  topics: Array<{
+    topic: string;
+    totalLag: number;
+    partitions: Array<{
+      partition: number;
+      currentOffset?: string;
+      logEndOffset: string;
+      lowOffset: string;
+      lag?: number;
+      metadata?: string | null;
+    }>;
+  }>;
 };
 
 export type SecurityMode = "dev" | "token";

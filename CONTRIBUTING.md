@@ -16,7 +16,7 @@ npm run compose:up
 The project currently needs help with:
 
 - Postgres persistence for configured clusters, agent runs, findings, and executed rebalance history.
-- Kafka topic config and lag APIs.
+- Kafka topic config and safe offset reset workflows.
 - OIDC/RBAC and policy checks.
 - Collector JMX metrics.
 - UX polish for safe mutation workflows.

@@ -66,6 +66,34 @@ export type ConsumerGroup = {
   protocolType: string;
   state?: string;
   members?: number;
+  lag?: {
+    total: number;
+    topics: number;
+    partitions: number;
+    unknownOffsets: number;
+  };
+};
+
+export type ConsumerGroupLag = {
+  groupId: string;
+  generatedAt: string;
+  state?: string;
+  members?: number;
+  protocolType: string;
+  totalLag: number;
+  unknownOffsets: number;
+  topics: Array<{
+    topic: string;
+    totalLag: number;
+    partitions: Array<{
+      partition: number;
+      currentOffset?: string;
+      logEndOffset: string;
+      lowOffset: string;
+      lag?: number;
+      metadata?: string | null;
+    }>;
+  }>;
 };
 
 export type MessageRecord = {
@@ -214,6 +242,8 @@ export const api = {
   topics: (clusterId: string) => request<Topic[]>(`/api/clusters/${clusterId}/topics`),
   consumerGroups: (clusterId: string) =>
     request<ConsumerGroup[]>(`/api/clusters/${clusterId}/consumer-groups`),
+  consumerGroupLag: (clusterId: string, groupId: string) =>
+    request<ConsumerGroupLag>(`/api/clusters/${clusterId}/consumer-groups/${encodeURIComponent(groupId)}/lag`),
   collectors: () => request<CollectorState[]>("/api/collectors"),
   audit: () => request<AuditEvent[]>("/api/audit"),
   agents: (clusterId: string) => request<AgentRun>(`/api/clusters/${clusterId}/agents`),

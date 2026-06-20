@@ -19,6 +19,7 @@ The API owns:
 
 - Kafka AdminClient operations.
 - Message browsing and producing.
+- Consumer group lag calculation from committed offsets and log-end offsets.
 - Collector registration and snapshots.
 - Advisor-agent checks.
 - Security posture reporting.
@@ -107,7 +108,7 @@ flowchart LR
 1. Persist configured clusters, agent runs, findings, and executed rebalance history in Postgres.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
-4. Add lag and offset operations with dry-run/approval workflows.
+4. Add offset reset operations with dry-run/approval workflows.
 5. Add reassignment throttling, cancellation, and JMX validation.
 6. Add GitOps import/export for topics and connector configs.
 7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

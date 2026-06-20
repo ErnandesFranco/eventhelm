@@ -1,5 +1,13 @@
 import { Kafka, logLevel } from "kafkajs";
-import type { ClusterConfig, ConsumerGroupSummary, PartitionPlacement, RebalancePlan, TopicSummary } from "./types.js";
+import type { ClusterConfig, ConsumerGroupLag, ConsumerGroupSummary, PartitionPlacement, RebalancePlan, TopicSummary } from "./types.js";
+
+type KafkaAdmin = ReturnType<ReturnType<typeof createKafka>["admin"]>;
+type GroupDescription = {
+  groupId: string;
+  protocolType: string;
+  state?: string;
+  members: unknown[];
+};
 
 function createKafka(cluster: ClusterConfig): Kafka {
   return new Kafka({
@@ -134,7 +142,7 @@ export async function createTopic(
   }
 }
 
-async function waitForTopic(admin: ReturnType<ReturnType<typeof createKafka>["admin"]>, topic: string) {
+async function waitForTopic(admin: KafkaAdmin, topic: string) {
   for (let attempt = 0; attempt < 10; attempt += 1) {
     if (await topicExists(admin, topic)) {
       return;
@@ -143,7 +151,7 @@ async function waitForTopic(admin: ReturnType<ReturnType<typeof createKafka>["ad
   }
 }
 
-async function topicExists(admin: ReturnType<ReturnType<typeof createKafka>["admin"]>, topic: string) {
+async function topicExists(admin: KafkaAdmin, topic: string) {
   try {
     const topics = await admin.listTopics();
     return topics.includes(topic);
@@ -169,17 +177,118 @@ export async function listConsumerGroups(cluster: ClusterConfig): Promise<Consum
     }
 
     const described = await admin.describeGroups(listed.groups.map((group) => group.groupId));
-    return described.groups
-      .map((group) => ({
+    const summaries = await mapWithConcurrency(described.groups as GroupDescription[], 4, async (group) => {
+      const lag = await buildConsumerGroupLag(admin, group);
+      return {
         groupId: group.groupId,
         protocolType: group.protocolType,
         state: group.state,
-        members: group.members.length
-      }))
-      .sort((left, right) => left.groupId.localeCompare(right.groupId));
+        members: group.members.length,
+        lag: {
+          total: lag.totalLag,
+          topics: lag.topics.length,
+          partitions: lag.topics.reduce((total, topic) => total + topic.partitions.length, 0),
+          unknownOffsets: lag.unknownOffsets
+        }
+      };
+    });
+
+    return summaries.sort((left, right) => left.groupId.localeCompare(right.groupId));
   } finally {
     await admin.disconnect();
   }
+}
+
+export async function describeConsumerGroupLag(cluster: ClusterConfig, groupId: string): Promise<ConsumerGroupLag> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const described = await admin.describeGroups([groupId]);
+    const group = described.groups.find((candidate) => candidate.groupId === groupId) as GroupDescription | undefined;
+    if (!group) {
+      throw new Error(`Consumer group '${groupId}' was not found`);
+    }
+    return buildConsumerGroupLag(admin, group);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+async function buildConsumerGroupLag(admin: KafkaAdmin, group: GroupDescription): Promise<ConsumerGroupLag> {
+  const committedOffsets = await admin.fetchOffsets({ groupId: group.groupId });
+  const topics = await Promise.all(
+    committedOffsets
+      .filter((topic) => topic.partitions.length > 0)
+      .map(async (topicOffsets) => {
+        const logOffsets = new Map(
+          (await admin.fetchTopicOffsets(topicOffsets.topic)).map((partition) => [partition.partition, partition])
+        );
+        const partitions = topicOffsets.partitions
+          .map((partition) => {
+            const logOffset = logOffsets.get(partition.partition);
+            const currentOffset = parseOffset(partition.offset);
+            const logEndOffset = logOffset?.high ?? "0";
+            const logEnd = parseOffset(logEndOffset);
+            const lag =
+              currentOffset === undefined || logEnd === undefined ? undefined : Math.max(0, logEnd - currentOffset);
+
+            return {
+              partition: partition.partition,
+              currentOffset: currentOffset === undefined ? undefined : partition.offset,
+              logEndOffset,
+              lowOffset: logOffset?.low ?? "0",
+              lag,
+              metadata: partition.metadata
+            };
+          })
+          .sort((left, right) => left.partition - right.partition);
+
+        return {
+          topic: topicOffsets.topic,
+          totalLag: partitions.reduce((total, partition) => total + (partition.lag ?? 0), 0),
+          partitions
+        };
+      })
+  );
+
+  return {
+    groupId: group.groupId,
+    generatedAt: new Date().toISOString(),
+    state: group.state,
+    members: group.members.length,
+    protocolType: group.protocolType,
+    totalLag: topics.reduce((total, topic) => total + topic.totalLag, 0),
+    unknownOffsets: topics.reduce(
+      (total, topic) => total + topic.partitions.filter((partition) => partition.lag === undefined).length,
+      0
+    ),
+    topics: topics.sort((left, right) => right.totalLag - left.totalLag || left.topic.localeCompare(right.topic))
+  };
+}
+
+function parseOffset(offset: string, fallback?: number): number | undefined {
+  const parsed = Number(offset);
+  if (!Number.isSafeInteger(parsed) || parsed < 0) {
+    return fallback;
+  }
+  return parsed;
+}
+
+async function mapWithConcurrency<T, R>(items: T[], concurrency: number, mapper: (item: T) => Promise<R>): Promise<R[]> {
+  const results: R[] = [];
+  let nextIndex = 0;
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, async () => {
+      while (nextIndex < items.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await mapper(items[index]);
+      }
+    })
+  );
+
+  return results;
 }
 
 export async function produceMessage(

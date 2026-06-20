@@ -380,6 +380,11 @@ label {
   border-color: #aab7c5;
 }
 
+.compactButton {
+  min-height: 32px;
+  padding: 0 10px;
+}
+
 .notice {
   border-radius: var(--radius);
   border: 1px solid var(--line-strong);
@@ -1010,7 +1015,11 @@ label {
 }
 
 .consumerTable .tableRow {
-  grid-template-columns: minmax(260px, 1.8fr) 140px 140px 100px;
+  grid-template-columns: minmax(250px, 1.7fr) 130px 120px 130px 90px 110px;
+}
+
+.lagTable .tableRow {
+  grid-template-columns: minmax(260px, 1.6fr) 90px 150px 150px 120px;
 }
 
 .collectorTable .tableRow {

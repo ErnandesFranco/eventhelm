@@ -210,6 +210,39 @@ function runOperator(context: AgentContext): AgentFinding[] {
     );
   }
 
+  const highestLagGroup = context.consumerGroups
+    .filter((group) => (group.lag?.total ?? 0) > 0)
+    .sort((left, right) => (right.lag?.total ?? 0) - (left.lag?.total ?? 0))[0];
+  if (highestLagGroup) {
+    const lag = highestLagGroup.lag?.total ?? 0;
+    findings.push(
+      finding(
+        "operator",
+        lag >= 10_000 ? "high" : "medium",
+        "Consumer group lag detected",
+        `${highestLagGroup.groupId} is ${lag.toLocaleString()} records behind across ${highestLagGroup.lag?.partitions ?? 0} partitions.`,
+        "Open the Consumers view, inspect lag by topic, and confirm whether consumers need scaling or recovery.",
+        "consumer-group",
+        highestLagGroup.groupId
+      )
+    );
+  }
+
+  const unknownOffsetGroups = context.consumerGroups.filter((group) => (group.lag?.unknownOffsets ?? 0) > 0);
+  if (unknownOffsetGroups.length > 0) {
+    findings.push(
+      finding(
+        "operator",
+        "low",
+        "Some consumer offsets are not committed",
+        `${unknownOffsetGroups.length} consumer groups include partitions with unknown committed offsets.`,
+        "Treat unknown offsets as a visibility gap before using lag as an SLO signal.",
+        "consumer-group",
+        unknownOffsetGroups[0]?.groupId
+      )
+    );
+  }
+
   if (pressuredCollectors.length > 0) {
     const worst = pressuredCollectors.sort(
       (left, right) => (right.lastSnapshot?.disk?.usedPercent ?? 0) - (left.lastSnapshot?.disk?.usedPercent ?? 0)

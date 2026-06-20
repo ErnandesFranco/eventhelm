@@ -41,6 +41,7 @@ import type {
   Cluster,
   CollectorState,
   ConsumerGroup,
+  ConsumerGroupLag,
   MessageRecord,
   Overview,
   RebalancePlan,
@@ -254,7 +255,7 @@ export function App() {
             setFromBeginning={setFromBeginning}
           />
         ) : null}
-        {!loading && activeTab === "consumers" ? <ConsumersView groups={groups} /> : null}
+        {!loading && activeTab === "consumers" ? <ConsumersView clusterId={selectedClusterId} groups={groups} /> : null}
         {!loading && activeTab === "collectors" ? <CollectorsView collectors={collectors} brokerCount={overview?.brokerCount ?? 0} /> : null}
         {!loading && activeTab === "audit" ? <AuditView audit={audit} /> : null}
       </main>
@@ -1042,37 +1043,123 @@ function MessagesView({
   );
 }
 
-function ConsumersView({ groups }: { groups: ConsumerGroup[] }) {
+function ConsumersView({ clusterId, groups }: { clusterId: string; groups: ConsumerGroup[] }) {
   const [query, setQuery] = useState("");
+  const [selectedLag, setSelectedLag] = useState<ConsumerGroupLag | null>(null);
+  const [busyGroup, setBusyGroup] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const filtered = groups.filter((group) => group.groupId.toLowerCase().includes(query.toLowerCase()));
+  const totalLag = groups.reduce((total, group) => total + (group.lag?.total ?? 0), 0);
+  const laggingGroups = groups.filter((group) => (group.lag?.total ?? 0) > 0).length;
+
+  async function inspectLag(groupId: string) {
+    setBusyGroup(groupId);
+    setError(null);
+    try {
+      setSelectedLag(await api.consumerGroupLag(clusterId, groupId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusyGroup(null);
+    }
+  }
+
   return (
-    <TableView
-      title="Consumer Groups"
-      subtitle={`${filtered.length} consumer groups reported by Kafka`}
-      search={<SearchField value={query} onChange={setQuery} placeholder="Search groups" />}
-      empty="No consumer groups found"
-      rows={filtered}
-      render={() => (
+    <div className="viewStack">
+      <div className="viewHeader">
+        <div>
+          <h2>Consumer Groups</h2>
+          <p>{filtered.length} consumer groups reported by Kafka</p>
+        </div>
+      </div>
+
+      <section className="metricStrip">
+        <Metric icon={Users} label="Groups" value={groups.length} detail="known coordinators" />
+        <Metric icon={Gauge} label="Total lag" value={totalLag.toLocaleString()} detail="records behind log end" />
+        <Metric icon={AlertTriangle} label="Lagging" value={laggingGroups} detail="groups above zero" />
+        <Metric
+          icon={CircleDot}
+          label="Unknown offsets"
+          value={groups.reduce((total, group) => total + (group.lag?.unknownOffsets ?? 0), 0)}
+          detail="uncommitted partitions"
+        />
+      </section>
+
+      <div className="filterBar">
+        <SearchField value={query} onChange={setQuery} placeholder="Search groups" />
+      </div>
+      {error ? <div className="notice error">{error}</div> : null}
+
+      <section className="surface">
         <DataTable className="consumerTable">
           <div className="tableRow tableHead">
             <span>Group</span>
-            <span>Protocol</span>
             <span>State</span>
+            <span>Lag</span>
+            <span>Topics</span>
             <span>Members</span>
+            <span>Inspect</span>
           </div>
           {filtered.map((group) => (
             <div className="tableRow" key={group.groupId}>
-              <span className="mono strongText">{group.groupId}</span>
-              <span>{group.protocolType || "n/a"}</span>
-              <StatusPill tone="neutral" icon={CircleDot}>
+              <span>
+                <strong className="mono">{group.groupId}</strong>
+                <small>{group.protocolType || "n/a"}</small>
+              </span>
+              <StatusPill tone={group.state === "Stable" ? "good" : "neutral"} icon={CircleDot}>
                 {group.state ?? "unknown"}
               </StatusPill>
+              <StatusPill tone={lagTone(group.lag?.total ?? 0)} icon={Gauge}>
+                {(group.lag?.total ?? 0).toLocaleString()}
+              </StatusPill>
+              <span>
+                <strong>{group.lag?.topics ?? 0}</strong>
+                <small>{group.lag?.partitions ?? 0} partitions</small>
+              </span>
               <span>{group.members ?? 0}</span>
+              <button className="secondaryButton compactButton" type="button" onClick={() => void inspectLag(group.groupId)}>
+                <Search size={15} />
+                {busyGroup === group.groupId ? "Loading" : "Lag"}
+              </button>
             </div>
           ))}
         </DataTable>
-      )}
-    />
+        {filtered.length === 0 ? <EmptyState title="No consumer groups found" /> : null}
+      </section>
+
+      {selectedLag ? (
+        <section className="surface">
+          <SurfaceHeader
+            icon={Gauge}
+            title={selectedLag.groupId}
+            meta={`${selectedLag.totalLag.toLocaleString()} records behind`}
+          />
+          <DataTable className="lagTable">
+            <div className="tableRow tableHead">
+              <span>Topic</span>
+              <span>Partition</span>
+              <span>Committed</span>
+              <span>Log end</span>
+              <span>Lag</span>
+            </div>
+            {selectedLag.topics.flatMap((topic) =>
+              topic.partitions.map((partition) => (
+                <div className="tableRow" key={`${topic.topic}-${partition.partition}`}>
+                  <span className="mono strongText">{topic.topic}</span>
+                  <span>{partition.partition}</span>
+                  <span className="mono">{partition.currentOffset ?? "unknown"}</span>
+                  <span className="mono">{partition.logEndOffset}</span>
+                  <StatusPill tone={lagTone(partition.lag ?? 0)} icon={Gauge}>
+                    {partition.lag === undefined ? "unknown" : partition.lag.toLocaleString()}
+                  </StatusPill>
+                </div>
+              ))
+            )}
+          </DataTable>
+          {selectedLag.topics.length === 0 ? <EmptyState title="No committed offsets for this group" /> : null}
+        </section>
+      ) : null}
+    </div>
   );
 }
 
@@ -1338,6 +1425,16 @@ function pressureTone(pressure?: "normal" | "watch" | "high" | "critical"): "goo
     return "good";
   }
   return "neutral";
+}
+
+function lagTone(lag: number): "good" | "warning" | "bad" | "neutral" {
+  if (lag >= 10_000) {
+    return "bad";
+  }
+  if (lag > 0) {
+    return "warning";
+  }
+  return "good";
 }
 
 function formatBytes(value?: number) {
