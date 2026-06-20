@@ -26,7 +26,7 @@ The API owns:
 - Advisor-agent checks.
 - Security posture reporting.
 - Audit events.
-- Postgres persistence for audit events, collector state, rebalance plans, advisor-agent runs, and findings.
+- Postgres persistence for cluster configs, audit events, collector state, rebalance plans, advisor-agent runs, and findings.
 - Versioned database migrations with checksum validation in `schema_migrations`.
 - Later: RBAC, policy checks, approval workflows.
 
@@ -70,6 +70,10 @@ Current agents:
 Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
 
 Each sweep is stored as an `agent_runs` record with a durable run ID, actor, trigger, severity summary, per-agent scores, and the full run payload. Individual findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
+
+### Cluster Registry
+
+Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. API writes can register or update clusters with explicit write confirmation. Public cluster responses and audit details expose connection metadata without leaking SASL passwords; production deployments still need external secret references and RBAC before multi-team use.
 
 ### Disk-Aware Rebalance
 
@@ -132,7 +136,7 @@ flowchart LR
 
 ## Near-Term Roadmap
 
-1. Persist configured clusters and production deployment metadata.
+1. Add production deployment metadata and external secret references.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add approval queues for offset resets, topic config changes, topic mutations, and rebalance execution.

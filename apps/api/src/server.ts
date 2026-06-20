@@ -4,8 +4,23 @@ import { z } from "zod";
 import { getAgentRun, listAgentRuns, saveAgentRun } from "./agentRuns.js";
 import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
+import {
+  deleteClusterConfig,
+  initializeClusterRegistry,
+  listClusterConfigs,
+  sanitizeClusterConfig,
+  toPublicCluster,
+  upsertClusterConfig
+} from "./clusterRegistry.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
-import { getCorsOrigin, getPort, getSecurityStatus, isRebalanceExecutionEnabled, loadClusters } from "./config.js";
+import {
+  clusterSchema,
+  getCorsOrigin,
+  getPort,
+  getSecurityStatus,
+  isRebalanceExecutionEnabled,
+  loadClusters
+} from "./config.js";
 import { closeDatabase, databaseSchemaStatus, initDatabase, persistenceMode } from "./db.js";
 import {
   alterPartitionAssignments,
@@ -28,12 +43,13 @@ import { getRebalancePlan, markRebalancePlanExecuted, saveRebalancePlan } from "
 import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
 import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
-const clusters = loadClusters();
+let clusters = loadClusters();
 const app = Fastify({
   logger: true
 });
 
 await initDatabase();
+clusters = await initializeClusterRegistry(clusters);
 
 await app.register(cors, {
   origin: getCorsOrigin()
@@ -133,13 +149,59 @@ app.get("/health", async () => ({
 
 app.get("/api/security/status", async () => getSecurityStatus());
 
-app.get("/api/clusters", async () =>
-  clusters.map((cluster) => ({
-    id: cluster.id,
-    name: cluster.name,
-    brokers: cluster.brokers
-  }))
-);
+app.get("/api/clusters", async () => clusters.map(toPublicCluster));
+
+app.post("/api/clusters", async (request) => {
+  assertWriteAllowed(request);
+  const body = clusterSchema
+    .extend({
+      id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "Cluster IDs must be lowercase alphanumeric slugs.")
+    })
+    .parse(request.body);
+  const actor = actorFromRequest(request);
+  const saved = await upsertClusterConfig(body, "api");
+  clusters = await listClusterConfigs();
+
+  await recordAudit({
+    actor,
+    action: "cluster.upsert",
+    clusterId: saved.id,
+    resourceType: "cluster",
+    resourceName: saved.id,
+    details: sanitizeClusterConfig(saved)
+  });
+
+  return toPublicCluster(saved);
+});
+
+app.delete("/api/clusters/:clusterId", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string().min(1) }).parse(request.params);
+  const existing = clusters.find((cluster) => cluster.id === params.clusterId);
+  if (!existing) {
+    throw badRequest("Cluster was not found.");
+  }
+  if ((existing as { source?: string }).source === "environment") {
+    throw forbidden("Environment-managed clusters cannot be deleted through the API.");
+  }
+
+  const deleted = await deleteClusterConfig(params.clusterId);
+  if (!deleted) {
+    throw badRequest("Cluster was not found.");
+  }
+  clusters = await listClusterConfigs();
+
+  await recordAudit({
+    actor: actorFromRequest(request),
+    action: "cluster.delete",
+    clusterId: deleted.id,
+    resourceType: "cluster",
+    resourceName: deleted.id,
+    details: sanitizeClusterConfig(deleted)
+  });
+
+  return { deleted: true, cluster: toPublicCluster(deleted) };
+});
 
 app.get("/api/clusters/:clusterId/overview", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);

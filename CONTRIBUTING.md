@@ -15,7 +15,7 @@ npm run compose:up
 
 The project currently needs help with:
 
-- Postgres persistence for configured clusters and production deployment metadata.
+- Production deployment metadata and external secret references.
 - Retention policies and backup guidance for persisted control-plane state.
 - Approval queues for safe mutation workflows.
 - OIDC/RBAC and policy checks.

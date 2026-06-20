@@ -101,6 +101,25 @@ const migrations: DatabaseMigration[] = [
       create index if not exists agent_findings_cluster_severity_idx on agent_findings (cluster_id, severity);
       create index if not exists agent_findings_resource_idx on agent_findings (resource_type, resource_name);
     `
+  },
+  {
+    id: "002_cluster_registry",
+    name: "Persisted Kafka cluster registry",
+    sql: `
+      create table if not exists cluster_configs (
+        id text primary key,
+        name text not null,
+        brokers text[] not null,
+        ssl boolean not null default false,
+        sasl jsonb,
+        source text not null,
+        created_at timestamptz not null default now(),
+        updated_at timestamptz not null default now()
+      );
+
+      create index if not exists cluster_configs_source_idx on cluster_configs (source);
+      create index if not exists cluster_configs_updated_at_idx on cluster_configs (updated_at desc);
+    `
   }
 ];
 

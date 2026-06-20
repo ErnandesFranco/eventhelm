@@ -1,7 +1,7 @@
 import { z } from "zod";
 import type { ClusterConfig, SecurityMode, SecurityStatus } from "./types.js";
 
-const clusterSchema = z.object({
+export const clusterSchema = z.object({
   id: z.string().min(1),
   name: z.string().min(1),
   brokers: z.array(z.string().min(1)).min(1),

@@ -2,6 +2,23 @@ export type Cluster = {
   id: string;
   name: string;
   brokers: string[];
+  ssl?: boolean;
+  saslConfigured?: boolean;
+  source?: "environment" | "api";
+  createdAt?: string;
+  updatedAt?: string;
+};
+
+export type ClusterRegistration = {
+  id: string;
+  name: string;
+  brokers: string[];
+  ssl?: boolean;
+  sasl?: {
+    mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
+    username: string;
+    password: string;
+  };
 };
 
 export type CollectorState = {
@@ -343,6 +360,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clusters: () => request<Cluster[]>("/api/clusters"),
+  upsertCluster: (body: ClusterRegistration) =>
+    request<Cluster>("/api/clusters", {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify(body)
+    }),
+  deleteCluster: (clusterId: string) =>
+    request<{ deleted: true; cluster: Cluster }>(`/api/clusters/${encodeURIComponent(clusterId)}`, {
+      method: "DELETE",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      }
+    }),
   security: () => request<SecurityStatus>("/api/security/status"),
   overview: (clusterId: string) => request<Overview>(`/api/clusters/${clusterId}/overview`),
   topics: (clusterId: string) => request<Topic[]>(`/api/clusters/${clusterId}/topics`),

@@ -8,7 +8,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 
 - A TypeScript API that connects to Kafka through KafkaJS.
 - A React console for command overview, live topology, topics, records, consumer groups, collectors, audit, and advisor agents.
-- Postgres persistence for audit events, broker collector state, rebalance plans, and advisor-agent run history.
+- Postgres persistence for cluster configs, audit events, broker collector state, rebalance plans, and advisor-agent run history.
 - One broker-local collector per broker in the Docker lab.
 - Topic configuration inspection and reviewed updates for common mutable topic configs.
 - Disk-aware partition rebalance planning from broker collector telemetry.
@@ -63,6 +63,15 @@ Current routes:
 
 Every sweep returns a durable run ID, severity summary, per-agent scores, and finding evidence. In Postgres mode, runs are stored in `agent_runs` and findings are indexed in `agent_findings` so operators can review posture drift over time.
 
+## Cluster Registry
+
+EventHelm bootstraps clusters from `EVENTHELM_CLUSTERS_JSON` and stores them in Postgres when persistence is enabled:
+
+- `GET /api/clusters` returns safe cluster metadata, including brokers, source, and whether SASL is configured.
+- `POST /api/clusters` registers or updates a cluster and requires write confirmation headers.
+- `DELETE /api/clusters/:clusterId` removes API-managed clusters; environment-managed clusters are protected.
+- Cluster read responses and audit records do not expose SASL passwords.
+
 ## Consumer Lag
 
 EventHelm calculates consumer lag with Kafka committed offsets and topic log-end offsets:
@@ -112,7 +121,7 @@ Current protections:
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
-- Audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
+- Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
 - The API tracks applied database migrations in `schema_migrations` and exposes schema status from `/health`.
 - Mutating requests support explicit confirmation headers.
 - Topic config updates require preview tokens and post-apply verification.
@@ -124,7 +133,7 @@ Still required before shared or production use:
 - OIDC/JWT user auth and RBAC.
 - Retention policies and backup guidance for persisted control-plane state.
 - Approval workflows for production mutations.
-- TLS/SASL examples and secret references.
+- TLS/SASL examples and external secret references.
 - Rate limits and per-user quotas.
 
 ## Local Development
