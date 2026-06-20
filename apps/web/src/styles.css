@@ -506,10 +506,6 @@ label {
   font-size: 0.84rem;
 }
 
-.topologySurface {
-  min-height: 440px;
-}
-
 .topologyMap {
   min-height: 384px;
   display: grid;
@@ -522,6 +518,19 @@ label {
     linear-gradient(#eef2f5 1px, transparent 1px),
     linear-gradient(90deg, #eef2f5 1px, transparent 1px);
   background-size: 28px 28px;
+}
+
+.topologyMap.compact,
+.topologyMap.dense {
+  grid-template-columns: 148px minmax(0, 1fr);
+  align-items: stretch;
+}
+
+.topologyMap.dense {
+  min-height: 0;
+  grid-template-columns: 118px minmax(0, 1fr);
+  gap: 12px;
+  padding: 14px;
 }
 
 .topologyHub {
@@ -539,14 +548,43 @@ label {
   box-shadow: 0 16px 40px rgba(22, 32, 42, 0.08);
 }
 
+.topologyMap.compact .topologyHub,
+.topologyMap.dense .topologyHub {
+  width: 108px;
+  min-height: 100%;
+  gap: 8px;
+}
+
 .topologyHub img {
   width: 58px;
   height: 58px;
 }
 
+.topologyMap.compact .topologyHub img,
+.topologyMap.dense .topologyHub img {
+  width: 46px;
+  height: 46px;
+}
+
+.topologyHub small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
 .brokerLane {
   display: grid;
   gap: 12px;
+}
+
+.brokerLane.compact,
+.brokerLane.dense {
+  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
+  align-content: start;
+}
+
+.brokerLane.dense {
+  grid-template-columns: repeat(auto-fit, minmax(106px, 1fr));
+  gap: 8px;
 }
 
 .brokerNode {
@@ -558,6 +596,18 @@ label {
   border-radius: var(--radius);
   background: #ffffff;
   padding: 14px;
+}
+
+.brokerLane.compact .brokerNode,
+.brokerLane.dense .brokerNode {
+  min-height: 76px;
+  gap: 5px;
+  padding: 10px;
+}
+
+.brokerLane.dense .brokerNode {
+  min-height: 58px;
+  padding: 7px;
 }
 
 .brokerNode.online {
@@ -573,6 +623,21 @@ label {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.brokerLane.dense .brokerNode > div {
+  gap: 6px;
+}
+
+.brokerLane.dense .brokerNode strong,
+.brokerLane.dense .brokerNode .mono {
+  font-size: 0.76rem;
+}
+
+.brokerLane.dense .statusPill {
+  min-height: 20px;
+  padding: 1px 6px;
+  font-size: 0.68rem;
 }
 
 .mono {
@@ -873,6 +938,66 @@ label {
   gap: 12px;
   padding: 16px;
   align-items: end;
+}
+
+.targetBrokerSelector {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px;
+}
+
+.targetBrokerSelector legend {
+  color: #3f4b57;
+  font-size: 0.88rem;
+  font-weight: 760;
+  padding: 0 4px;
+}
+
+.targetBrokerSelector > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.targetBrokerOption {
+  min-height: 32px;
+  display: inline-flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--line-strong);
+  border-radius: 999px;
+  background: #ffffff;
+  padding: 0 10px;
+  color: var(--text);
+  font-size: 0.83rem;
+  font-weight: 740;
+  white-space: nowrap;
+}
+
+.targetBrokerOption:has(input:checked) {
+  border-color: #9bb7f0;
+  background: #eef4ff;
+  color: #244f9c;
+}
+
+.targetBrokerOption:has(input:disabled) {
+  opacity: 0.45;
+}
+
+.targetBrokerOption input {
+  width: 15px;
+  height: 15px;
+  min-height: 0;
+}
+
+.targetBrokerSelector small {
+  color: var(--muted);
 }
 
 .brokerPressureGrid {

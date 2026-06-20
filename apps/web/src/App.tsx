@@ -329,13 +329,15 @@ function CommandCenter({
 
 function TopologyPanel({ overview }: { overview: Overview }) {
   const collectorByBroker = new Map(overview.collectors.map((collector) => [collector.heartbeat.brokerId, collector]));
+  const density = overview.brokers.length > 8 ? "dense" : overview.brokers.length > 4 ? "compact" : "standard";
   return (
-    <div className="topologyMap">
+    <div className={`topologyMap ${density}`}>
       <div className="topologyHub">
         <img src={eventhelmMark} alt="" />
         <span>EventHelm API</span>
+        <small>{overview.brokers.length} brokers</small>
       </div>
-      <div className="brokerLane">
+      <div className={`brokerLane ${density}`}>
         {overview.brokers.map((broker) => {
           const collector = collectorByBroker.get(String(broker.nodeId));
           const freshness = collector ? collectorFreshness(collector) : "missing";
@@ -447,10 +449,25 @@ function RebalanceView({
   const [highWatermarkPercent, setHighWatermarkPercent] = useState(85);
   const [minBrokerGapPercent, setMinBrokerGapPercent] = useState(10);
   const [includeInternal, setIncludeInternal] = useState(false);
+  const [sourceBrokerId, setSourceBrokerId] = useState("auto");
+  const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>([]);
   const [plan, setPlan] = useState<RebalancePlan | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const brokerIds = overview.brokers.map((broker) => broker.nodeId).sort((left, right) => left - right);
+
+  function resetPlan() {
+    setPlan(null);
+    setCopied(false);
+  }
+
+  function toggleTargetBroker(brokerId: number, checked: boolean) {
+    resetPlan();
+    setSelectedTargetIds((current) =>
+      checked ? [...new Set([...current, brokerId])].sort((left, right) => left - right) : current.filter((id) => id !== brokerId)
+    );
+  }
 
   async function generatePlan() {
     setBusy(true);
@@ -460,7 +477,9 @@ function RebalanceView({
         maxMovements,
         includeInternal,
         highWatermarkPercent,
-        minBrokerGapPercent
+        minBrokerGapPercent,
+        sourceBrokerId: sourceBrokerId === "auto" ? undefined : Number(sourceBrokerId),
+        targetBrokerIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined
       });
       setPlan(nextPlan);
       await onAuditChanged();
@@ -497,6 +516,7 @@ function RebalanceView({
   }
 
   const brokerPressure = plan?.brokerPressure ?? brokerPressureFromOverview(overview);
+  const placementComputed = Boolean(plan);
 
   return (
     <div className="viewStack">
@@ -518,7 +538,16 @@ function RebalanceView({
         <div className="rebalanceControlGrid">
           <label>
             Max movements
-            <input type="number" min="1" max="100" value={maxMovements} onChange={(event) => setMaxMovements(Number(event.target.value))} />
+            <input
+              type="number"
+              min="1"
+              max="100"
+              value={maxMovements}
+              onChange={(event) => {
+                setMaxMovements(Number(event.target.value));
+                resetPlan();
+              }}
+            />
           </label>
           <label>
             High-water mark %
@@ -527,7 +556,10 @@ function RebalanceView({
               min="50"
               max="99"
               value={highWatermarkPercent}
-              onChange={(event) => setHighWatermarkPercent(Number(event.target.value))}
+              onChange={(event) => {
+                setHighWatermarkPercent(Number(event.target.value));
+                resetPlan();
+              }}
             />
           </label>
           <label>
@@ -537,13 +569,61 @@ function RebalanceView({
               min="1"
               max="60"
               value={minBrokerGapPercent}
-              onChange={(event) => setMinBrokerGapPercent(Number(event.target.value))}
+              onChange={(event) => {
+                setMinBrokerGapPercent(Number(event.target.value));
+                resetPlan();
+              }}
             />
           </label>
+          <label>
+            Source broker
+            <select
+              value={sourceBrokerId}
+              onChange={(event) => {
+                setSourceBrokerId(event.target.value);
+                setSelectedTargetIds((current) => current.filter((id) => String(id) !== event.target.value));
+                resetPlan();
+              }}
+            >
+              <option value="auto">Auto by disk pressure</option>
+              {brokerIds.map((brokerId) => (
+                <option value={brokerId} key={brokerId}>
+                  Broker {brokerId}
+                </option>
+              ))}
+            </select>
+          </label>
           <label className="switch">
-            <input checked={includeInternal} onChange={(event) => setIncludeInternal(event.target.checked)} type="checkbox" />
+            <input
+              checked={includeInternal}
+              onChange={(event) => {
+                setIncludeInternal(event.target.checked);
+                resetPlan();
+              }}
+              type="checkbox"
+            />
             Include internal topics
           </label>
+          <fieldset className="targetBrokerSelector">
+            <legend>Allowed target brokers</legend>
+            <div>
+              {brokerIds.map((brokerId) => {
+                const disabled = sourceBrokerId === String(brokerId);
+                return (
+                  <label className="targetBrokerOption" key={brokerId}>
+                    <input
+                      checked={selectedTargetIds.includes(brokerId)}
+                      disabled={disabled}
+                      onChange={(event) => toggleTargetBroker(brokerId, event.target.checked)}
+                      type="checkbox"
+                    />
+                    Broker {brokerId}
+                  </label>
+                );
+              })}
+            </div>
+            <small>{selectedTargetIds.length === 0 ? "Any eligible broker" : `${selectedTargetIds.length} selected`}</small>
+          </fieldset>
         </div>
       </section>
 
@@ -561,8 +641,8 @@ function RebalanceView({
             </div>
             <div className="brokerPressureMeta">
               <span>{broker.disk ? formatBytes(broker.disk.freeBytes) : "unknown"} free</span>
-              <span>{broker.replicaCount} replicas</span>
-              <span>{broker.leaderCount} leaders</span>
+              <span>{broker.disk ? `sampled ${formatAge(broker.disk.sampledAt)}` : "no disk sample"}</span>
+              <span>{placementComputed ? `${broker.replicaCount} replicas / ${broker.leaderCount} leaders` : "placement after plan"}</span>
             </div>
           </article>
         ))}
@@ -578,11 +658,12 @@ function RebalanceView({
             <Metric icon={ShieldCheck} label="Execution" value={plan.executable ? "Ready" : "Locked"} detail={plan.executable ? "backend accepts apply" : "requires opt-in"} />
           </section>
 
-          {plan.warnings.length > 0 ? (
+          {plan.warnings.length > 0 || plan.executionBlockedReason ? (
             <section className="notice rebalanceWarnings">
               {plan.warnings.map((warning) => (
                 <span key={warning}>{warning}</span>
               ))}
+              {plan.executionBlockedReason ? <span>{plan.executionBlockedReason}</span> : null}
             </section>
           ) : null}
 
