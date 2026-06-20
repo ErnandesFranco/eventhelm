@@ -848,16 +848,42 @@ label {
   border: 1px solid #cbd6e0;
   border-radius: var(--radius);
   background:
+    linear-gradient(90deg, rgba(47, 111, 228, 0.08), transparent 34px),
     linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(248, 250, 252, 0.94)),
     #ffffff;
-  padding: 12px;
+  padding: 12px 12px 12px 17px;
   box-shadow: 0 12px 24px rgba(22, 32, 42, 0.06);
 }
 
 .brokerLane.dense .brokerNode {
   min-height: 84px;
   gap: 7px;
-  padding: 9px;
+  padding: 9px 9px 9px 15px;
+}
+
+.brokerRackGrip {
+  position: absolute;
+  top: 13px;
+  bottom: 13px;
+  left: 7px;
+  display: grid;
+  align-content: center;
+  gap: 6px;
+}
+
+.brokerLane.dense .brokerRackGrip {
+  top: 10px;
+  bottom: 10px;
+  left: 6px;
+  gap: 5px;
+}
+
+.brokerRackGrip i {
+  width: 3px;
+  height: 3px;
+  border-radius: 999px;
+  background: #9aa8b6;
+  box-shadow: 0 0 0 1px rgba(154, 168, 182, 0.16);
 }
 
 .brokerNode.online {
@@ -960,19 +986,56 @@ label {
   gap: 5px;
 }
 
-.brokerSignalGrid span {
+.brokerSignal {
+  min-height: 28px;
   display: flex;
   align-items: center;
   gap: 7px;
   min-width: 0;
+  border: 1px solid #d7e0e8;
+  border-radius: 7px;
+  background: #f6f9fb;
   color: var(--muted);
+  padding: 0 8px;
   font-size: 0.78rem;
   font-weight: 720;
 }
 
-.brokerSignalGrid svg {
+.brokerLane.dense .brokerSignal {
+  min-height: 24px;
+  padding: 0 6px;
+  font-size: 0.72rem;
+}
+
+.brokerSignal svg {
   flex: none;
   color: #718093;
+}
+
+.brokerSignal.online,
+.brokerSignal.normal {
+  border-color: #c6e3d8;
+  background: rgba(228, 246, 239, 0.74);
+  color: #23664c;
+}
+
+.brokerSignal.watch,
+.brokerSignal.stale,
+.brokerSignal.missing {
+  border-color: #efd49b;
+  background: rgba(255, 248, 232, 0.88);
+  color: #80510a;
+}
+
+.brokerSignal.high,
+.brokerSignal.critical {
+  border-color: #f2b8ae;
+  background: rgba(255, 238, 235, 0.9);
+  color: #9b2d1f;
+}
+
+.brokerSignal.unknown {
+  border-style: dashed;
 }
 
 .brokerDiskFooter {

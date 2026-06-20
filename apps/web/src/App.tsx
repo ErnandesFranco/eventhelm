@@ -537,6 +537,11 @@ function TopologyPanel({ overview }: { overview: Overview }) {
               <div className={`brokerLane ${density}`}>
                 {lane.map((card) => (
                   <article className={`brokerNode ${card.freshness} ${card.isController ? "controller" : ""}`} key={card.broker.nodeId}>
+                    <span className="brokerRackGrip" aria-hidden="true">
+                      <i />
+                      <i />
+                      <i />
+                    </span>
                     <div className="brokerNodeHeader">
                       <span className="brokerIcon">
                         <Server size={17} />
@@ -556,11 +561,11 @@ function TopologyPanel({ overview }: { overview: Overview }) {
                       </span>
                     ) : null}
                     <div className="brokerSignalGrid">
-                      <span>
+                      <span className={`brokerSignal ${card.freshness}`}>
                         <RadioTower size={13} />
                         {card.collector ? `${card.freshness} ${formatAge(card.collector.heartbeat.observedAt)}` : "collector missing"}
                       </span>
-                      <span>
+                      <span className={`brokerSignal ${card.disk?.pressure ?? "unknown"}`}>
                         <HardDrive size={13} />
                         {card.disk ? `${card.disk.usedPercent.toFixed(1)}% used` : "disk unknown"}
                       </span>
