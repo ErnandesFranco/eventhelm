@@ -118,12 +118,16 @@ export function App() {
         setGroups([]);
         setCollectors([]);
         setAudit([]);
+        setMessages([]);
         setAgentRun(null);
         setAgentHistory([]);
+        setSelectedTopic("");
         return;
       }
+      const clusterChanged = nextClusterId !== selectedClusterId;
       if (nextClusterId !== selectedClusterId) {
         setSelectedClusterId(nextClusterId);
+        setMessages([]);
       }
       const [loadedOverview, loadedTopics, loadedGroups, loadedCollectors, loadedAudit] = await Promise.all([
         api.overview(nextClusterId),
@@ -141,7 +145,9 @@ export function App() {
       setAudit(loadedAudit);
       setAgentRun(loadedAgents);
       setAgentHistory(loadedAgentHistory);
-      setSelectedTopic((current) => current || loadedTopics.find((topic) => !topic.isInternal)?.name || loadedTopics[0]?.name || "");
+      const topicNames = new Set(messageTopicOptions(loadedTopics).map((topic) => topic.name));
+      const fallbackTopic = defaultMessageTopic(loadedTopics);
+      setSelectedTopic((current) => (clusterChanged || !topicNames.has(current) ? fallbackTopic : current));
       setLastRefreshed(new Date());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -149,6 +155,12 @@ export function App() {
       setLoading(false);
     }
   }, [selectedClusterId]);
+
+  const selectCluster = useCallback((clusterId: string) => {
+    setSelectedClusterId(clusterId);
+    setSelectedTopic("");
+    setMessages([]);
+  }, []);
 
   const refreshClusterRegistry = useCallback(async () => {
     setError(null);
@@ -169,11 +181,14 @@ export function App() {
         setMessages([]);
         setAgentRun(null);
         setAgentHistory([]);
+        setSelectedTopic("");
         return;
       }
 
       if (nextClusterId !== selectedClusterId) {
         setSelectedClusterId(nextClusterId);
+        setSelectedTopic("");
+        setMessages([]);
       }
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -183,6 +198,10 @@ export function App() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    setMessages([]);
+  }, [selectedClusterId, selectedTopic]);
 
   const browse = async () => {
     if (!selectedTopic) {
@@ -222,7 +241,7 @@ export function App() {
 
         <div className="clusterSwitch">
           <label htmlFor="cluster">Cluster</label>
-          <select id="cluster" value={selectedClusterId} onChange={(event) => setSelectedClusterId(event.target.value)}>
+          <select id="cluster" value={selectedClusterId} onChange={(event) => selectCluster(event.target.value)}>
             {clusters.map((cluster) => (
               <option value={cluster.id} key={cluster.id}>
                 {cluster.name}
@@ -300,7 +319,7 @@ export function App() {
           <ClustersView
             clusters={clusters}
             selectedClusterId={selectedClusterId}
-            onSelect={setSelectedClusterId}
+            onSelect={selectCluster}
             onChanged={refreshClusterRegistry}
           />
         ) : null}
@@ -1715,6 +1734,7 @@ function MessagesView({
   const [key, setKey] = useState("");
   const [value, setValue] = useState("");
   const [formatJson, setFormatJson] = useState(true);
+  const selectableTopics = messageTopicOptions(topics);
 
   async function produce(event: FormEvent) {
     event.preventDefault();
@@ -1726,20 +1746,18 @@ function MessagesView({
     <div className="viewStack">
       <div className="filterBar">
         <select value={selectedTopic} onChange={(event) => setSelectedTopic(event.target.value)}>
-          {topics
-            .filter((topic) => !topic.isInternal)
-            .map((topic) => (
-              <option key={topic.name} value={topic.name}>
-                {topic.name}
-              </option>
-            ))}
+          {selectableTopics.map((topic) => (
+            <option key={topic.name} value={topic.name}>
+              {topic.name}
+            </option>
+          ))}
         </select>
         <input type="number" min="1" max="100" value={limit} onChange={(event) => setLimit(Number(event.target.value))} title="Limit" />
         <label className="switch">
           <input checked={fromBeginning} onChange={(event) => setFromBeginning(event.target.checked)} type="checkbox" />
           From beginning
         </label>
-        <button className="secondaryButton" type="button" onClick={() => void browse()}>
+        <button className="secondaryButton" type="button" disabled={!selectedTopic} onClick={() => void browse()}>
           <Activity size={17} />
           Browse
         </button>
@@ -1777,7 +1795,7 @@ function MessagesView({
             Value
             <textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder='{"type":"event","source":"console"}' required />
           </label>
-          <button className="primaryButton" type="submit">
+          <button className="primaryButton" type="submit" disabled={!selectedTopic}>
             <Send size={17} />
             Produce
           </button>
@@ -2968,6 +2986,15 @@ function EmptyState({ title }: { title: string }) {
       <span>{title}</span>
     </div>
   );
+}
+
+function messageTopicOptions(topics: Topic[]) {
+  const userTopics = topics.filter((topic) => !topic.isInternal);
+  return userTopics.length > 0 ? userTopics : topics;
+}
+
+function defaultMessageTopic(topics: Topic[]) {
+  return messageTopicOptions(topics)[0]?.name ?? "";
 }
 
 function brokerPressureFromOverview(overview: Overview): RebalancePlan["brokerPressure"] {
