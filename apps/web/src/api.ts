@@ -280,6 +280,11 @@ export type AuditFilters = {
 };
 
 export type SecurityStatus = {
+  runtime: {
+    version: string;
+    buildSha?: string;
+    buildTime?: string;
+  };
   authMode: "dev" | "token";
   apiTokenConfigured: boolean;
   apiTokenCount: number;

@@ -277,6 +277,10 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
+      args:
+        EVENTHELM_VERSION: ${EVENTHELM_VERSION:-0.1.0}
+        EVENTHELM_BUILD_SHA: ${EVENTHELM_BUILD_SHA:-local}
+        EVENTHELM_BUILD_TIME: ${EVENTHELM_BUILD_TIME:-local}
     container_name: eventhelm-api
     depends_on:
       db:

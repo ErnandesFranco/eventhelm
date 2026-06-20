@@ -28,6 +28,7 @@ The API owns:
 - Audit events.
 - Postgres persistence for cluster configs, audit events, collector state, rebalance plans, advisor-agent runs, and findings.
 - Versioned database migrations with checksum validation in `schema_migrations`.
+- Runtime build metadata on health and security status responses for deployment traceability.
 - Later: OIDC/JWT identity, policy checks, approval workflows.
 
 Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. In token mode, audit actors and write-rate principals are derived from the authenticated token rather than caller-supplied actor headers, and review/apply workflows enforce separation of duties across requester or planner, reviewer, and execution actors. This is a local/deployment-token authorization layer, not a replacement for per-user identity.

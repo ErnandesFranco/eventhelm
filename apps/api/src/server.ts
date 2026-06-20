@@ -25,6 +25,7 @@ import {
   clusterSchema,
   getCorsOrigin,
   getPort,
+  getRuntimeInfo,
   getSecurityStatus,
   isClusterBreakglassEnabled,
   isRebalanceExecutionEnabled,
@@ -223,6 +224,7 @@ const topicConfigUpdateSchema = z.object({
 app.get("/health", async () => ({
   ok: true,
   service: "eventhelm-api",
+  runtime: getRuntimeInfo(),
   persistence: persistenceMode(),
   database: await databaseSchemaStatus(),
   timestamp: new Date().toISOString()

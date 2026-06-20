@@ -25,6 +25,9 @@ test("advisor sweeps include durable run metadata and severity summary", async (
       clusterChangeReviews: [],
       rebalancePlans: [],
       security: {
+        runtime: {
+          version: "test"
+        },
         authMode: "dev",
         apiTokenConfigured: false,
         apiTokenCount: 0,
@@ -154,6 +157,9 @@ test("advisor sweeps flag review queues and direct cluster mutations", () => {
       }
     ],
     security: {
+      runtime: {
+        version: "test"
+      },
       authMode: "token",
       apiTokenConfigured: true,
       apiTokenCount: 1,

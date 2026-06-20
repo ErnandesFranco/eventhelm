@@ -362,6 +362,7 @@ export type ApiTokenConfig = {
 };
 
 export type SecurityStatus = {
+  runtime: RuntimeInfo;
   authMode: SecurityMode;
   apiTokenConfigured: boolean;
   apiTokenCount: number;
@@ -371,6 +372,12 @@ export type SecurityStatus = {
   readAuthRequired: boolean;
   writeConfirmationRequired: boolean;
   writeRateLimitPerMinute: number;
+};
+
+export type RuntimeInfo = {
+  version: string;
+  buildSha?: string;
+  buildTime?: string;
 };
 
 export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";

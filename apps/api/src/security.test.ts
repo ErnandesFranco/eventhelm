@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { FastifyRequest } from "fastify";
+import { getRuntimeInfo } from "./config.js";
 import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertSeparatedActor, assertWriteAllowed } from "./security.js";
 
 const managedEnvKeys = [
@@ -10,7 +11,10 @@ const managedEnvKeys = [
   "EVENTHELM_COLLECTOR_TOKEN",
   "EVENTHELM_REQUIRE_READ_AUTH",
   "EVENTHELM_REQUIRE_WRITE_CONFIRMATION",
-  "EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE"
+  "EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE",
+  "EVENTHELM_VERSION",
+  "EVENTHELM_BUILD_SHA",
+  "EVENTHELM_BUILD_TIME"
 ];
 
 test("scoped API tokens enforce write scope boundaries", () => {
@@ -203,6 +207,23 @@ test("collector token authorizes collector requests", () => {
         } as unknown as FastifyRequest)
       );
       assert.equal(error.statusCode, 401);
+    }
+  );
+});
+
+test("runtime info reads deployment metadata from environment", () => {
+  withEnv(
+    {
+      EVENTHELM_VERSION: "9.9.9-test",
+      EVENTHELM_BUILD_SHA: "abc123def456",
+      EVENTHELM_BUILD_TIME: "2026-01-01T00:00:00Z"
+    },
+    () => {
+      assert.deepEqual(getRuntimeInfo(), {
+        version: "9.9.9-test",
+        buildSha: "abc123def456",
+        buildTime: "2026-01-01T00:00:00Z"
+      });
     }
   );
 });

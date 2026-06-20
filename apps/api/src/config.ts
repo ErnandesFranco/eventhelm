@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ApiTokenConfig, AuthScope, ClusterConfig, SecurityMode, SecurityStatus } from "./types.js";
+import type { ApiTokenConfig, AuthScope, ClusterConfig, RuntimeInfo, SecurityMode, SecurityStatus } from "./types.js";
 
 export const authScopes = [
   "read",
@@ -51,6 +51,10 @@ function env(primary: string, fallback?: string): string | undefined {
   return process.env[primary] ?? (fallback ? process.env[fallback] : undefined);
 }
 
+function firstNonEmptyEnv(...keys: string[]): string | undefined {
+  return keys.map((key) => process.env[key]).find((value) => value !== undefined && value.length > 0);
+}
+
 export function loadClusters(): ClusterConfig[] {
   const raw = env("EVENTHELM_CLUSTERS_JSON", "BROKARA_CLUSTERS_JSON") ?? process.env.PLATFORM_CLUSTERS_JSON;
   if (!raw) {
@@ -74,6 +78,7 @@ export function getSecurityStatus(): SecurityStatus {
   const corsOrigin = env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN") ?? "*";
   const apiTokens = getApiTokens();
   return {
+    runtime: getRuntimeInfo(),
     authMode,
     apiTokenConfigured: apiTokens.length > 0,
     apiTokenCount: apiTokens.length,
@@ -83,6 +88,14 @@ export function getSecurityStatus(): SecurityStatus {
     readAuthRequired: isReadAuthRequired(),
     writeConfirmationRequired: env("EVENTHELM_REQUIRE_WRITE_CONFIRMATION", "BROKARA_REQUIRE_WRITE_CONFIRMATION") === "true",
     writeRateLimitPerMinute: getWriteRateLimitPerMinute()
+  };
+}
+
+export function getRuntimeInfo(): RuntimeInfo {
+  return {
+    version: firstNonEmptyEnv("EVENTHELM_VERSION", "BROKARA_VERSION", "npm_package_version") ?? "0.1.0",
+    buildSha: firstNonEmptyEnv("EVENTHELM_BUILD_SHA", "GIT_SHA", "COMMIT_SHA"),
+    buildTime: firstNonEmptyEnv("EVENTHELM_BUILD_TIME", "BUILD_TIME")
   };
 }
 

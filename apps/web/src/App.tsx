@@ -598,6 +598,7 @@ function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
     return <EmptyState title="Security posture unavailable" />;
   }
   const rows = [
+    ["API version", formatRuntimeVersion(security.runtime)],
     ["API mode", security.authMode],
     ["API token", security.apiTokenConfigured ? "configured" : "not configured"],
     ["API token count", String(security.apiTokenCount)],
@@ -618,6 +619,11 @@ function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
       ))}
     </div>
   );
+}
+
+function formatRuntimeVersion(runtime: SecurityStatus["runtime"]) {
+  const sha = runtime.buildSha ? ` (${runtime.buildSha.slice(0, 12)})` : "";
+  return `${runtime.version}${sha}`;
 }
 
 function AgentsView({

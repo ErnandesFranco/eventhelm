@@ -153,6 +153,7 @@ Current protections:
 - Mutating endpoints support per-actor/per-scope write rate limits with `EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE`.
 - Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
 - The API tracks applied database migrations in `schema_migrations` and exposes schema status from `/health`.
+- `/health` and `/api/security/status` expose API runtime metadata (`EVENTHELM_VERSION`, `EVENTHELM_BUILD_SHA`, `EVENTHELM_BUILD_TIME`) for deployment traceability.
 - Mutating requests support explicit confirmation headers.
 - Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
