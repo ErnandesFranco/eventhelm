@@ -27,6 +27,7 @@ The API owns:
 - Security posture reporting.
 - Audit events.
 - Postgres persistence for audit events, collector state, rebalance plans, advisor-agent runs, and findings.
+- Versioned database migrations with checksum validation in `schema_migrations`.
 - Later: RBAC, policy checks, approval workflows.
 
 ### Web Console
@@ -131,7 +132,7 @@ flowchart LR
 
 ## Near-Term Roadmap
 
-1. Persist configured clusters and add migration versioning for control-plane state.
+1. Persist configured clusters and production deployment metadata.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add approval queues for offset resets, topic config changes, topic mutations, and rebalance execution.

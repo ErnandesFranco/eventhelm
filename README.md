@@ -113,6 +113,7 @@ Current protections:
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - Audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
+- The API tracks applied database migrations in `schema_migrations` and exposes schema status from `/health`.
 - Mutating requests support explicit confirmation headers.
 - Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
@@ -121,7 +122,7 @@ Current protections:
 Still required before shared or production use:
 
 - OIDC/JWT user auth and RBAC.
-- Retention policies, backup guidance, and migration versioning for persisted control-plane state.
+- Retention policies and backup guidance for persisted control-plane state.
 - Approval workflows for production mutations.
 - TLS/SASL examples and secret references.
 - Rate limits and per-user quotas.

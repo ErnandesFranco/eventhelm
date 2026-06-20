@@ -6,7 +6,7 @@ import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
 import { getCorsOrigin, getPort, getSecurityStatus, isRebalanceExecutionEnabled, loadClusters } from "./config.js";
-import { closeDatabase, initDatabase, persistenceMode } from "./db.js";
+import { closeDatabase, databaseSchemaStatus, initDatabase, persistenceMode } from "./db.js";
 import {
   alterPartitionAssignments,
   applyTopicConfigUpdate,
@@ -127,6 +127,7 @@ app.get("/health", async () => ({
   ok: true,
   service: "eventhelm-api",
   persistence: persistenceMode(),
+  database: await databaseSchemaStatus(),
   timestamp: new Date().toISOString()
 }));
 

@@ -334,7 +334,7 @@ function runScribe(context: AgentContext): AgentFinding[] {
         "info",
         "Postgres persistence is enabled",
         "Audit events and broker collector state survive API restarts.",
-        "Add retention policies, backups, and migration version tracking before production rollout.",
+        "Add retention policies and backup guidance before production rollout.",
         "platform"
       )
     );
