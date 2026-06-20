@@ -185,6 +185,9 @@ function runOperator(context: AgentContext): AgentFinding[] {
   const pressuredCollectors = context.collectors.filter((collector) =>
     ["high", "critical"].includes(collector.lastSnapshot?.disk?.pressure ?? "")
   );
+  const memoryPressuredCollectors = context.collectors.filter((collector) =>
+    ["high", "critical"].includes(collector.lastSnapshot?.host?.memoryPressure ?? "")
+  );
 
   if (freshCollectors.length < context.brokerCount) {
     findings.push(
@@ -269,6 +272,23 @@ function runOperator(context: AgentContext): AgentFinding[] {
         "Broker disk pressure needs partition movement",
         `Broker ${worst?.heartbeat.brokerId ?? "unknown"} is at ${worst?.lastSnapshot?.disk?.usedPercent ?? 0}% disk usage.`,
         "Open the Rebalance view and generate a disk-pressure reassignment plan before the broker reaches log-dir exhaustion.",
+        "broker",
+        worst?.heartbeat.brokerId
+      )
+    );
+  }
+
+  if (memoryPressuredCollectors.length > 0) {
+    const worst = memoryPressuredCollectors.sort(
+      (left, right) => (right.lastSnapshot?.host?.usedMemoryPercent ?? 0) - (left.lastSnapshot?.host?.usedMemoryPercent ?? 0)
+    )[0];
+    findings.push(
+      finding(
+        "operator",
+        worst?.lastSnapshot?.host?.memoryPressure === "critical" ? "high" : "medium",
+        "Broker host memory pressure detected",
+        `Broker ${worst?.heartbeat.brokerId ?? "unknown"} host memory is at ${worst?.lastSnapshot?.host?.usedMemoryPercent ?? 0}% used.`,
+        "Review broker host pressure before rebalancing or scaling consumers on the affected node.",
         "broker",
         worst?.heartbeat.brokerId
       )

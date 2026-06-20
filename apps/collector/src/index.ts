@@ -77,6 +77,7 @@ async function sendSnapshot() {
     const [disk, partitions] = brokerDataPath
       ? await Promise.all([readDiskTelemetry(brokerDataPath), readPartitionLogSizes(brokerDataPath)])
       : [undefined, []];
+    const host = readHostTelemetry();
 
     await postJson("/api/collectors/snapshot", {
       ...basePayload(),
@@ -85,6 +86,7 @@ async function sendSnapshot() {
       controllerId: cluster.controller,
       kafkaClusterId: cluster.clusterId,
       disk,
+      host,
       partitions,
       brokers: cluster.brokers.map((broker) => ({
         nodeId: broker.nodeId,
@@ -162,12 +164,34 @@ async function readDiskTelemetry(path: string) {
     freeBytes,
     usedBytes,
     usedPercent: Number(usedPercent.toFixed(2)),
-    pressure: diskPressure(usedPercent),
+    pressure: pressureFromPercent(usedPercent),
     sampledAt: new Date().toISOString()
   };
 }
 
-function diskPressure(usedPercent: number) {
+function readHostTelemetry() {
+  const totalMemoryBytes = os.totalmem();
+  const freeMemoryBytes = os.freemem();
+  const usedMemoryBytes = Math.max(0, totalMemoryBytes - freeMemoryBytes);
+  const usedMemoryPercent = totalMemoryBytes > 0 ? (usedMemoryBytes / totalMemoryBytes) * 100 : 0;
+  const [loadAverage1m, loadAverage5m, loadAverage15m] = os.loadavg();
+
+  return {
+    cpuCount: os.cpus().length,
+    loadAverage1m: Number(loadAverage1m.toFixed(2)),
+    loadAverage5m: Number(loadAverage5m.toFixed(2)),
+    loadAverage15m: Number(loadAverage15m.toFixed(2)),
+    totalMemoryBytes,
+    freeMemoryBytes,
+    usedMemoryBytes,
+    usedMemoryPercent: Number(usedMemoryPercent.toFixed(2)),
+    memoryPressure: pressureFromPercent(usedMemoryPercent),
+    uptimeSeconds: Math.round(os.uptime()),
+    sampledAt: new Date().toISOString()
+  };
+}
+
+function pressureFromPercent(usedPercent: number) {
   if (usedPercent >= 92) {
     return "critical";
   }

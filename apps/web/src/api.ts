@@ -37,6 +37,7 @@ export type CollectorState = {
     controllerId?: number;
     kafkaClusterId?: string;
     disk?: DiskTelemetry;
+    host?: HostTelemetry;
     partitions?: PartitionLogSize[];
   };
 };
@@ -48,6 +49,20 @@ export type DiskTelemetry = {
   usedBytes: number;
   usedPercent: number;
   pressure: "normal" | "watch" | "high" | "critical";
+  sampledAt: string;
+};
+
+export type HostTelemetry = {
+  cpuCount: number;
+  loadAverage1m: number;
+  loadAverage5m: number;
+  loadAverage15m: number;
+  totalMemoryBytes: number;
+  freeMemoryBytes: number;
+  usedMemoryBytes: number;
+  usedMemoryPercent: number;
+  memoryPressure: "normal" | "watch" | "high" | "critical";
+  uptimeSeconds: number;
   sampledAt: string;
 };
 

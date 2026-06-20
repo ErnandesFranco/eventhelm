@@ -43,6 +43,20 @@ export type DiskTelemetry = {
   sampledAt: string;
 };
 
+export type HostTelemetry = {
+  cpuCount: number;
+  loadAverage1m: number;
+  loadAverage5m: number;
+  loadAverage15m: number;
+  totalMemoryBytes: number;
+  freeMemoryBytes: number;
+  usedMemoryBytes: number;
+  usedMemoryPercent: number;
+  memoryPressure: DiskPressure;
+  uptimeSeconds: number;
+  sampledAt: string;
+};
+
 export type PartitionLogSize = {
   topic: string;
   partition: number;
@@ -56,6 +70,7 @@ export type CollectorSnapshot = CollectorHeartbeat & {
   controllerId?: number;
   kafkaClusterId?: string;
   disk?: DiskTelemetry;
+  host?: HostTelemetry;
   partitions?: PartitionLogSize[];
   brokers: Array<{
     nodeId: number;

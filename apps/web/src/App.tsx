@@ -1928,10 +1928,12 @@ function CollectorsView({ collectors, brokerCount }: { collectors: CollectorStat
             <span>Status</span>
             <span>Last seen</span>
             <span>Disk</span>
+            <span>Host</span>
             <span>Snapshot</span>
           </div>
           {filtered.map((collector) => {
             const freshness = collectorFreshness(collector);
+            const host = collector.lastSnapshot?.host;
             return (
               <div className="tableRow" key={collector.heartbeat.collectorId}>
                 <span className="mono strongText">{collector.heartbeat.collectorId}</span>
@@ -1942,6 +1944,9 @@ function CollectorsView({ collectors, brokerCount }: { collectors: CollectorStat
                 <span>{formatAge(collector.heartbeat.observedAt)}</span>
                 <StatusPill tone={pressureTone(collector.lastSnapshot?.disk?.pressure)} icon={HardDrive}>
                   {collector.lastSnapshot?.disk ? `${collector.lastSnapshot.disk.usedPercent.toFixed(1)}%` : "unknown"}
+                </StatusPill>
+                <StatusPill tone={pressureTone(host?.memoryPressure)} icon={Gauge}>
+                  {host ? `${host.usedMemoryPercent.toFixed(1)}% mem / ${host.loadAverage1m.toFixed(2)} load` : "unknown"}
                 </StatusPill>
                 <span>
                   {collector.lastSnapshot?.brokerCount ?? 0} brokers / {collector.lastSnapshot?.topicCount ?? 0} topics

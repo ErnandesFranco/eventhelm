@@ -661,6 +661,21 @@ app.post("/api/collectors/snapshot", async (request) => {
           sampledAt: z.string().min(1)
         })
         .optional(),
+      host: z
+        .object({
+          cpuCount: z.number().int().positive(),
+          loadAverage1m: z.number().nonnegative(),
+          loadAverage5m: z.number().nonnegative(),
+          loadAverage15m: z.number().nonnegative(),
+          totalMemoryBytes: z.number().nonnegative(),
+          freeMemoryBytes: z.number().nonnegative(),
+          usedMemoryBytes: z.number().nonnegative(),
+          usedMemoryPercent: z.number().min(0).max(100),
+          memoryPressure: z.enum(["normal", "watch", "high", "critical"]),
+          uptimeSeconds: z.number().nonnegative(),
+          sampledAt: z.string().min(1)
+        })
+        .optional(),
       partitions: z
         .array(
           z.object({

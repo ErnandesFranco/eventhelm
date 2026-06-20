@@ -46,10 +46,18 @@ Collectors run near brokers. In Docker Compose this is modeled as one collector 
 
 The collector is push-based so broker networks do not have to expose collector ports back to the control plane.
 
+Current collector responsibilities:
+
+- Heartbeats and broker identity.
+- Kafka cluster snapshots.
+- Disk capacity, free space, used space, and pressure bands.
+- Partition log directory byte sizes for rebalance estimates.
+- Host CPU count, load averages, memory pressure, and uptime.
+
 Future collector responsibilities:
 
 - JMX metric scraping.
-- Disk, network, and broker host telemetry.
+- Network telemetry.
 - Multi-log-dir attribution and JMX cross-checks for exact data-movement planning.
 - Broker config drift detection.
 - Local log signal extraction.

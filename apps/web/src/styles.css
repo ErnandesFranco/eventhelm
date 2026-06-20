@@ -1346,7 +1346,7 @@ label {
 }
 
 .collectorTable .tableRow {
-  grid-template-columns: minmax(230px, 1.5fr) 90px 120px 130px 120px minmax(190px, 1fr);
+  grid-template-columns: minmax(230px, 1.4fr) 90px 120px 130px 120px minmax(190px, 1fr) minmax(190px, 1fr);
 }
 
 .auditTable .tableRow {

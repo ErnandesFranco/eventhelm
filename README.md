@@ -9,7 +9,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 - A TypeScript API that connects to Kafka through KafkaJS.
 - A React console for command overview, live topology, topics, records, consumer groups, collectors, audit, and advisor agents.
 - Postgres persistence for cluster configs, audit events, broker collector state, rebalance plans, and advisor-agent run history.
-- One broker-local collector per broker in the Docker lab.
+- One broker-local collector per broker in the Docker lab, reporting disk, partition byte, and host pressure telemetry.
 - Topic configuration inspection and reviewed updates for common mutable topic configs.
 - Disk-aware partition rebalance planning from broker collector telemetry.
 - Consumer group lag summaries and topic/partition offset drill-downs.
@@ -106,6 +106,7 @@ EventHelm includes a disk-pressure rebalance planner:
 
 - Collectors can mount broker log data at `BROKER_DATA_PATH` and report disk pressure.
 - Collectors scan broker log directories and report per-partition byte sizes for movement estimates.
+- Collectors also report host CPU count, load averages, memory pressure, and uptime.
 - `POST /api/clusters/:clusterId/rebalance/plan` generates a Kafka reassignment payload.
 - `GET /api/clusters/:clusterId/rebalance/plans` lists retained plan summaries.
 - `GET /api/clusters/:clusterId/rebalance/plans/:planId` returns the full stored plan for review or reload.
