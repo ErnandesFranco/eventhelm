@@ -1,17 +1,17 @@
 # Security Policy
 
-Brokara is early-stage software. Treat the current Docker Compose stack as a local lab only.
+EventHelm is early-stage software. Treat the current Docker Compose stack as a local lab only.
 
 ## Current Security Posture
 
-- API token mode is available with `BROKARA_AUTH_MODE=token` and `BROKARA_API_TOKEN`.
-- Collector shared-token mode is available with `BROKARA_COLLECTOR_TOKEN`.
+- API token mode is available with `EVENTHELM_AUTH_MODE=token` and `EVENTHELM_API_TOKEN`.
+- Collector shared-token mode is available with `EVENTHELM_COLLECTOR_TOKEN`.
 - Docker Compose binds host ports to `127.0.0.1`.
 - Audit events are currently in-memory and not durable.
 
 ## Not Ready Yet
 
-Do not expose Brokara to shared or production networks until these are implemented:
+Do not expose EventHelm to shared or production networks until these are implemented:
 
 - OIDC/JWT authentication.
 - Role-based access control.

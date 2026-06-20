@@ -19,7 +19,18 @@ export type CollectorState = {
     topicCount: number;
     controllerId?: number;
     kafkaClusterId?: string;
+    disk?: DiskTelemetry;
   };
+};
+
+export type DiskTelemetry = {
+  path: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  usedPercent: number;
+  pressure: "normal" | "watch" | "high" | "critical";
+  sampledAt: string;
 };
 
 export type Overview = {
@@ -107,9 +118,62 @@ export type AgentRun = {
   findings: AgentFinding[];
 };
 
+export type RebalancePlan = {
+  clusterId: string;
+  generatedAt: string;
+  strategy: "disk-pressure";
+  executable: boolean;
+  executionBlockedReason?: string;
+  brokerPressure: Array<{
+    brokerId: number;
+    host?: string;
+    port?: number;
+    replicaCount: number;
+    leaderCount: number;
+    disk?: DiskTelemetry;
+  }>;
+  summary: {
+    movements: number;
+    partitionsEvaluated: number;
+    sourceBrokerIds: number[];
+    targetBrokerIds: number[];
+    maxUsedPercent?: number;
+    minUsedPercent?: number;
+    estimatedBytesMoved?: number;
+  };
+  movements: Array<{
+    topic: string;
+    partition: number;
+    sourceBrokerId: number;
+    targetBrokerId: number;
+    currentReplicas: number[];
+    proposedReplicas: number[];
+    leaderMove: boolean;
+    estimatedSizeBytes?: number;
+    reason: string;
+  }>;
+  reassignment: {
+    version: 1;
+    partitions: Array<{
+      topic: string;
+      partition: number;
+      replicas: number[];
+      log_dirs: string[];
+    }>;
+  };
+  kafkaJsRequest: Array<{
+    topic: string;
+    partitionAssignment: Array<{
+      partition: number;
+      replicas: number[];
+    }>;
+  }>;
+  warnings: string[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:18080";
-const apiToken = import.meta.env.VITE_BROKARA_API_TOKEN;
-const actor = import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
+const apiToken = import.meta.env.VITE_EVENTHELM_API_TOKEN ?? import.meta.env.VITE_BROKARA_API_TOKEN;
+const actor = import.meta.env.VITE_EVENTHELM_ACTOR ?? import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
@@ -147,10 +211,37 @@ export const api = {
     request<AgentRun>(`/api/clusters/${clusterId}/agents/run`, {
       method: "POST",
       headers: {
-        "x-brokara-actor": actor,
-        "x-brokara-confirm": "true"
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
       },
       body: JSON.stringify({})
+    }),
+  planRebalance: (
+    clusterId: string,
+    body: {
+      maxMovements: number;
+      includeInternal: boolean;
+      highWatermarkPercent: number;
+      minBrokerGapPercent: number;
+      sourceBrokerId?: number;
+      targetBrokerIds?: number[];
+    }
+  ) =>
+    request<RebalancePlan>(`/api/clusters/${clusterId}/rebalance/plan`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor
+      },
+      body: JSON.stringify(body)
+    }),
+  executeRebalance: (clusterId: string, topics: RebalancePlan["kafkaJsRequest"]) =>
+    request<{ accepted: boolean }>(`/api/clusters/${clusterId}/rebalance/execute`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify({ topics })
     }),
   createTopic: (
     clusterId: string,
@@ -165,8 +256,8 @@ export const api = {
     request<{ created: boolean }>(`/api/clusters/${clusterId}/topics`, {
       method: "POST",
       headers: {
-        "x-brokara-actor": actor,
-        "x-brokara-confirm": "true"
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
       },
       body: JSON.stringify(body)
     }),
@@ -181,8 +272,8 @@ export const api = {
     request<{ result: unknown }>(`/api/clusters/${clusterId}/messages/produce`, {
       method: "POST",
       headers: {
-        "x-brokara-actor": actor,
-        "x-brokara-confirm": "true"
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
       },
       body: JSON.stringify(body)
     }),

@@ -1,15 +1,15 @@
 {
-  "name": "brokara",
+  "name": "eventhelm",
   "version": "0.1.0",
   "private": true,
-  "description": "Open-source Kafka operations cockpit with broker-local collectors and advisory agents.",
+  "description": "Open-source event-streaming operations cockpit with broker-local collectors and advisory agents.",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
-    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace @brokara/api\" \"npm run dev --workspace @brokara/web\"",
+    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace @eventhelm/api\" \"npm run dev --workspace @eventhelm/web\"",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down -v",
     "compose:logs": "docker compose logs -f api web collector-1 collector-2 collector-3"

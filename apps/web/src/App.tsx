@@ -1,26 +1,38 @@
 import {
   Activity,
   AlertTriangle,
+  ArrowRightLeft,
   Bot,
   Boxes,
   CheckCircle2,
+  ChevronRight,
+  CircleDot,
+  ClipboardCopy,
   Clock3,
+  Command,
   Database,
   FileClock,
   Gauge,
+  HardDrive,
   KeyRound,
+  Layers3,
+  LockKeyhole,
   MessageSquareText,
+  Network,
   Plus,
   RadioTower,
   RefreshCw,
   Search,
   Send,
+  Server,
+  ShieldAlert,
   ShieldCheck,
   Users,
   X
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import type { ReactNode } from "react";
 import type {
   AdvisorAgent,
   AgentFinding,
@@ -31,27 +43,30 @@ import type {
   ConsumerGroup,
   MessageRecord,
   Overview,
+  RebalancePlan,
   SecurityStatus,
   Topic
 } from "./api";
 import { api } from "./api";
+import eventhelmMark from "./assets/eventhelm-mark.svg";
 
-type Tab = "overview" | "agents" | "topics" | "messages" | "consumers" | "collectors" | "audit";
+type Tab = "command" | "agents" | "rebalance" | "topics" | "messages" | "consumers" | "collectors" | "audit";
 
-const tabs: Array<{ id: Tab; label: string; icon: LucideIcon }> = [
-  { id: "overview", label: "Overview", icon: Gauge },
-  { id: "agents", label: "Agents", icon: Bot },
-  { id: "topics", label: "Topics", icon: Database },
-  { id: "messages", label: "Messages", icon: MessageSquareText },
-  { id: "consumers", label: "Consumers", icon: Users },
-  { id: "collectors", label: "Collectors", icon: RadioTower },
-  { id: "audit", label: "Audit", icon: FileClock }
+const tabs: Array<{ id: Tab; label: string; icon: LucideIcon; group: "Operate" | "Inspect" }> = [
+  { id: "command", label: "Command", icon: Command, group: "Operate" },
+  { id: "agents", label: "Agents", icon: Bot, group: "Operate" },
+  { id: "rebalance", label: "Rebalance", icon: ArrowRightLeft, group: "Operate" },
+  { id: "topics", label: "Topics", icon: Database, group: "Inspect" },
+  { id: "messages", label: "Messages", icon: MessageSquareText, group: "Inspect" },
+  { id: "consumers", label: "Consumers", icon: Users, group: "Inspect" },
+  { id: "collectors", label: "Collectors", icon: RadioTower, group: "Inspect" },
+  { id: "audit", label: "Audit", icon: FileClock, group: "Inspect" }
 ];
 
 export function App() {
   const [clusters, setClusters] = useState<Cluster[]>([]);
   const [selectedClusterId, setSelectedClusterId] = useState("local");
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [activeTab, setActiveTab] = useState<Tab>("command");
   const [overview, setOverview] = useState<Overview | null>(null);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [groups, setGroups] = useState<ConsumerGroup[]>([]);
@@ -134,85 +149,92 @@ export function App() {
     }
   };
 
-  const health = summarizeHealth(overview, agentRun);
+  const posture = summarizePosture(overview, agentRun);
 
   return (
-    <div className="shell">
+    <div className="appShell">
       <aside className="sidebar">
         <div className="brand">
-          <span className="brandMark">B</span>
+          <img src={eventhelmMark} alt="" />
           <div>
-            <strong>Brokara</strong>
-            <span>Kafka operations cockpit</span>
+            <strong>EventHelm</strong>
+            <span>Kafka Operations</span>
           </div>
         </div>
 
-        <label className="fieldLabel" htmlFor="cluster">
-          Cluster
-        </label>
-        <select id="cluster" value={selectedClusterId} onChange={(event) => setSelectedClusterId(event.target.value)}>
-          {clusters.map((cluster) => (
-            <option value={cluster.id} key={cluster.id}>
-              {cluster.name}
-            </option>
-          ))}
-        </select>
+        <div className="clusterSwitch">
+          <label htmlFor="cluster">Cluster</label>
+          <select id="cluster" value={selectedClusterId} onChange={(event) => setSelectedClusterId(event.target.value)}>
+            {clusters.map((cluster) => (
+              <option value={cluster.id} key={cluster.id}>
+                {cluster.name}
+              </option>
+            ))}
+          </select>
+        </div>
 
-        <nav className="tabs">
-          {tabs.map((tab) => {
-            const Icon = tab.icon;
-            return (
-              <button
-                className={activeTab === tab.id ? "tab active" : "tab"}
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                title={tab.label}
-              >
-                <Icon size={18} />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+        <nav className="navGroups">
+          {(["Operate", "Inspect"] as const).map((group) => (
+            <section key={group}>
+              <h2>{group}</h2>
+              {tabs
+                .filter((tab) => tab.group === group)
+                .map((tab) => {
+                  const Icon = tab.icon;
+                  return (
+                    <button
+                      className={activeTab === tab.id ? "navItem active" : "navItem"}
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                    >
+                      <Icon size={17} />
+                      <span>{tab.label}</span>
+                      <ChevronRight size={15} />
+                    </button>
+                  );
+                })}
+            </section>
+          ))}
         </nav>
 
-        <div className="sidebarStatus">
-          <span className={`statusDot ${health.tone}`} />
+        <div className={`postureBlock ${posture.tone}`}>
+          <span />
           <div>
-            <strong>{health.label}</strong>
-            <span>{health.detail}</span>
+            <strong>{posture.label}</strong>
+            <small>{posture.detail}</small>
           </div>
         </div>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
+      <main className="workspace">
+        <header className="commandBar">
           <div>
-            <p className="eyebrow">Mission control</p>
+            <p>Mission Control</p>
             <h1>{selectedCluster?.name ?? "Kafka cluster"}</h1>
           </div>
-          <div className="topbarActions">
+          <div className="commandTools">
             {security ? (
-              <span className={`chip ${security.authMode === "dev" ? "warning" : "success"}`}>
-                <KeyRound size={14} />
+              <StatusPill tone={security.authMode === "dev" ? "warning" : "good"} icon={KeyRound}>
                 {security.authMode === "dev" ? "Dev auth" : "Token auth"}
-              </span>
+              </StatusPill>
             ) : null}
-            {lastRefreshed ? <span className="muted">Refreshed {lastRefreshed.toLocaleTimeString()}</span> : null}
+            {lastRefreshed ? <span className="lastRefresh">Updated {lastRefreshed.toLocaleTimeString()}</span> : null}
             <button className="iconButton" type="button" onClick={() => void load()} title="Refresh">
               <RefreshCw size={18} />
             </button>
           </div>
         </header>
 
-        {error ? <div className="error">{error}</div> : null}
-        {loading ? <div className="loading">Loading Brokara state...</div> : null}
+        {error ? <div className="notice error">{error}</div> : null}
+        {loading ? <div className="notice loading">Loading live cluster state...</div> : null}
 
-        {!loading && activeTab === "overview" && overview ? (
-          <OverviewView overview={overview} agentRun={agentRun} audit={audit} onRunAgents={runAgents} />
+        {!loading && activeTab === "command" && overview ? (
+          <CommandCenter overview={overview} agentRun={agentRun} audit={audit} security={security} onRunAgents={runAgents} />
         ) : null}
-        {!loading && activeTab === "agents" && agentRun ? (
-          <AgentsView agentRun={agentRun} onRunAgents={runAgents} />
+        {!loading && activeTab === "agents" && agentRun ? <AgentsView agentRun={agentRun} onRunAgents={runAgents} /> : null}
+        {!loading && activeTab === "rebalance" && overview ? (
+          <RebalanceView clusterId={selectedClusterId} overview={overview} onAuditChanged={() => api.audit().then(setAudit)} />
         ) : null}
         {!loading && activeTab === "topics" ? (
           <TopicsView clusterId={selectedClusterId} topics={topics} brokerCount={overview?.brokerCount ?? 1} onChanged={() => void load()} />
@@ -240,144 +262,381 @@ export function App() {
   );
 }
 
-function OverviewView({
+function CommandCenter({
   overview,
   agentRun,
   audit,
+  security,
   onRunAgents
 }: {
   overview: Overview;
   agentRun: AgentRun | null;
   audit: AuditEvent[];
+  security: SecurityStatus | null;
   onRunAgents: () => Promise<void>;
 }) {
-  const topFindings = agentRun?.findings.slice(0, 4) ?? [];
   const freshCollectors = overview.collectors.filter((collector) => collectorFreshness(collector) === "online").length;
+  const highestFinding = agentRun?.findings[0];
 
   return (
-    <section className="stack">
-      <div className="heroPanel">
+    <div className="commandLayout">
+      <section className="statusBanner">
         <div>
-          <span className="chip success">
-            <CheckCircle2 size={14} />
-            {overview.brokerCount} brokers reachable
-          </span>
-          <h2>Fleet posture</h2>
-          <p>
-            Controller broker {overview.controllerId ?? "unknown"} is serving a cluster with {overview.topicCount} user topics,{" "}
-            {overview.consumerGroupCount} consumer groups, and {freshCollectors} fresh broker collectors.
-          </p>
+          <StatusPill tone={highestFinding?.severity === "critical" ? "bad" : highestFinding?.severity === "high" ? "warning" : "good"} icon={Gauge}>
+            {highestFinding ? `${highestFinding.severity} finding` : "No critical findings"}
+          </StatusPill>
+          <h2>{highestFinding?.title ?? "Cluster posture is clear"}</h2>
+          <p>{highestFinding?.recommendation ?? "EventHelm is showing live state from Kafka and broker-local collectors."}</p>
         </div>
-        <button className="primary" type="button" onClick={() => void onRunAgents()}>
-          <Bot size={16} />
-          <span>Run agents</span>
+        <button className="primaryButton" type="button" onClick={() => void onRunAgents()}>
+          <Bot size={17} />
+          Run advisor sweep
         </button>
-      </div>
-
-      <div className="statGrid">
-        <Stat icon={Boxes} label="Brokers" value={overview.brokerCount} detail="Kafka nodes" />
-        <Stat icon={Database} label="Topics" value={overview.topicCount} detail={`${overview.internalTopicCount} internal`} />
-        <Stat icon={Users} label="Consumer groups" value={overview.consumerGroupCount} detail="Active or known" />
-        <Stat icon={RadioTower} label="Collectors" value={freshCollectors} detail={`${overview.collectors.length} registered`} />
-      </div>
-
-      <div className="splitGrid">
-        <section className="panel">
-          <div className="panelHeader">
-            <h2>Agent Findings</h2>
-            <span className="muted">{agentRun?.generatedAt ? new Date(agentRun.generatedAt).toLocaleTimeString() : "not run"}</span>
-          </div>
-          <FindingList findings={topFindings} />
-        </section>
-        <section className="panel">
-          <div className="panelHeader">
-            <h2>Recent Activity</h2>
-            <span className="muted">{audit.length} events</span>
-          </div>
-          <AuditTimeline audit={audit.slice(0, 5)} />
-        </section>
-      </div>
-
-      <section className="panel">
-        <div className="panelHeader">
-          <h2>Broker Inventory</h2>
-          <span className="muted">Controller {overview.controllerId ?? "unknown"}</span>
-        </div>
-        <div className="table brokerTable">
-          <div className="row header">
-            <span>Broker</span>
-            <span>Host</span>
-            <span>Port</span>
-          </div>
-          {overview.brokers.map((broker) => (
-            <div className="row" key={broker.nodeId}>
-              <span className="mono">{broker.nodeId}</span>
-              <span className="mono">{broker.host}</span>
-              <span>{broker.port}</span>
-            </div>
-          ))}
-        </div>
       </section>
-    </section>
+
+      <section className="metricStrip">
+        <Metric icon={Server} label="Brokers" value={overview.brokerCount} detail={`controller ${overview.controllerId ?? "unknown"}`} />
+        <Metric icon={Database} label="Topics" value={overview.topicCount} detail={`${overview.internalTopicCount} internal hidden`} />
+        <Metric icon={Users} label="Consumer groups" value={overview.consumerGroupCount} detail="reported by Kafka" />
+        <Metric icon={RadioTower} label="Collectors" value={`${freshCollectors}/${overview.brokerCount}`} detail="fresh broker agents" />
+        <Metric icon={ShieldAlert} label="Findings" value={agentRun?.findings.length ?? 0} detail="advisor checks" />
+      </section>
+
+      <div className="contentGrid">
+        <section className="surface topologySurface">
+          <SurfaceHeader icon={Network} title="Live Topology" meta={`${overview.brokers.length} brokers`} />
+          <TopologyPanel overview={overview} />
+        </section>
+
+        <section className="surface">
+          <SurfaceHeader icon={Bot} title="Advisor Queue" meta={agentRun ? `${agentRun.findings.length} open` : "not run"} />
+          <FindingList findings={agentRun?.findings.slice(0, 5) ?? []} />
+        </section>
+
+        <section className="surface">
+          <SurfaceHeader icon={LockKeyhole} title="Security Envelope" meta={security?.authMode ?? "unknown"} />
+          <SecurityEnvelope security={security} />
+        </section>
+
+        <section className="surface">
+          <SurfaceHeader icon={FileClock} title="Operations Ledger" meta={`${audit.length} events`} />
+          <AuditTimeline audit={audit.slice(0, 6)} />
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function TopologyPanel({ overview }: { overview: Overview }) {
+  const collectorByBroker = new Map(overview.collectors.map((collector) => [collector.heartbeat.brokerId, collector]));
+  return (
+    <div className="topologyMap">
+      <div className="topologyHub">
+        <img src={eventhelmMark} alt="" />
+        <span>EventHelm API</span>
+      </div>
+      <div className="brokerLane">
+        {overview.brokers.map((broker) => {
+          const collector = collectorByBroker.get(String(broker.nodeId));
+          const freshness = collector ? collectorFreshness(collector) : "missing";
+          return (
+            <article className={`brokerNode ${freshness}`} key={broker.nodeId}>
+              <div>
+                <Server size={18} />
+                <strong>Broker {broker.nodeId}</strong>
+              </div>
+              <span className="mono">{broker.host}:{broker.port}</span>
+              <StatusPill tone={freshness === "online" ? "good" : "warning"} icon={CircleDot}>
+                {freshness === "missing" ? "collector missing" : freshness}
+              </StatusPill>
+            </article>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
+  if (!security) {
+    return <EmptyState title="Security posture unavailable" />;
+  }
+  const rows = [
+    ["API mode", security.authMode],
+    ["API token", security.apiTokenConfigured ? "configured" : "not configured"],
+    ["Collector token", security.collectorTokenConfigured ? "configured" : "not configured"],
+    ["CORS origin", security.corsOrigin],
+    ["Write confirmation", security.writeConfirmationRequired ? "required" : "not required"]
+  ];
+  return (
+    <div className="keyValueList">
+      {rows.map(([label, value]) => (
+        <div key={label}>
+          <span>{label}</span>
+          <strong>{value}</strong>
+        </div>
+      ))}
+    </div>
   );
 }
 
 function AgentsView({ agentRun, onRunAgents }: { agentRun: AgentRun; onRunAgents: () => Promise<void> }) {
   return (
-    <section className="stack">
-      <div className="sectionBar">
+    <div className="viewStack">
+      <div className="viewHeader">
         <div>
           <h2>Advisor Agents</h2>
-          <p className="muted">Rules-based now, model-ready later.</p>
+          <p>Policy checks against live cluster, collector, security, and governance state.</p>
         </div>
-        <button className="primary" type="button" onClick={() => void onRunAgents()}>
-          <Activity size={16} />
-          <span>Run checks</span>
+        <button className="primaryButton" type="button" onClick={() => void onRunAgents()}>
+          <Activity size={17} />
+          Run checks
         </button>
       </div>
 
-      <div className="agentGrid">
+      <div className="agentBoard">
         {agentRun.agents.map((agent) => (
           <AgentCard key={agent.id} agent={agent} />
         ))}
       </div>
 
-      <section className="panel">
-        <div className="panelHeader">
-          <h2>Open Findings</h2>
-          <span className="muted">{agentRun.findings.length} findings</span>
-        </div>
+      <section className="surface">
+        <SurfaceHeader icon={ShieldAlert} title="Open Findings" meta={`${agentRun.findings.length} findings`} />
         <FindingTable findings={agentRun.findings} />
       </section>
-    </section>
+    </div>
   );
 }
 
 function AgentCard({ agent }: { agent: AdvisorAgent }) {
-  const topFinding = agent.findings[0];
+  const finding = agent.findings[0];
   return (
-    <article className="agentCard">
-      <div className="agentCardTop">
-        <div className="agentIcon">
-          <Bot size={18} />
-        </div>
-        <span className={`score ${scoreTone(agent.score)}`}>{agent.score}</span>
+    <article className="agentPanel">
+      <div className="agentTopline">
+        <Bot size={19} />
+        <span className={`scoreBadge ${scoreTone(agent.score)}`}>{agent.score}</span>
       </div>
       <h3>{agent.name}</h3>
       <p>{agent.mission}</p>
-      <span className="muted">{agent.cadence}</span>
-      {topFinding ? (
+      <small>{agent.cadence}</small>
+      {finding ? (
         <div className="agentFinding">
-          <span className={`severity ${topFinding.severity}`}>{topFinding.severity}</span>
-          <strong>{topFinding.title}</strong>
+          <Severity severity={finding.severity} />
+          <strong>{finding.title}</strong>
         </div>
       ) : (
-        <div className="agentFinding calm">
+        <div className="agentFinding clear">
           <CheckCircle2 size={16} />
-          No findings
+          No open findings
         </div>
       )}
     </article>
+  );
+}
+
+function RebalanceView({
+  clusterId,
+  overview,
+  onAuditChanged
+}: {
+  clusterId: string;
+  overview: Overview;
+  onAuditChanged: () => Promise<void>;
+}) {
+  const [maxMovements, setMaxMovements] = useState(12);
+  const [highWatermarkPercent, setHighWatermarkPercent] = useState(85);
+  const [minBrokerGapPercent, setMinBrokerGapPercent] = useState(10);
+  const [includeInternal, setIncludeInternal] = useState(false);
+  const [plan, setPlan] = useState<RebalancePlan | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  async function generatePlan() {
+    setBusy(true);
+    setError(null);
+    try {
+      const nextPlan = await api.planRebalance(clusterId, {
+        maxMovements,
+        includeInternal,
+        highWatermarkPercent,
+        minBrokerGapPercent
+      });
+      setPlan(nextPlan);
+      await onAuditChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function executePlan() {
+    if (!plan?.executable) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      await api.executeRebalance(clusterId, plan.kafkaJsRequest);
+      await onAuditChanged();
+      await generatePlan();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+      setBusy(false);
+    }
+  }
+
+  async function copyPayload() {
+    if (!plan) {
+      return;
+    }
+    await navigator.clipboard.writeText(JSON.stringify(plan.reassignment, null, 2));
+    setCopied(true);
+    window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  const brokerPressure = plan?.brokerPressure ?? brokerPressureFromOverview(overview);
+
+  return (
+    <div className="viewStack">
+      <div className="viewHeader">
+        <div>
+          <h2>Partition Rebalance</h2>
+          <p>Disk-pressure reassignment planning from broker-local collector telemetry.</p>
+        </div>
+        <button className="primaryButton" type="button" disabled={busy} onClick={() => void generatePlan()}>
+          <ArrowRightLeft size={17} />
+          Generate plan
+        </button>
+      </div>
+
+      {error ? <div className="notice error">{error}</div> : null}
+
+      <section className="surface rebalanceControls">
+        <SurfaceHeader icon={HardDrive} title="Planning Controls" meta="dry-run first" />
+        <div className="rebalanceControlGrid">
+          <label>
+            Max movements
+            <input type="number" min="1" max="100" value={maxMovements} onChange={(event) => setMaxMovements(Number(event.target.value))} />
+          </label>
+          <label>
+            High-water mark %
+            <input
+              type="number"
+              min="50"
+              max="99"
+              value={highWatermarkPercent}
+              onChange={(event) => setHighWatermarkPercent(Number(event.target.value))}
+            />
+          </label>
+          <label>
+            Imbalance trigger %
+            <input
+              type="number"
+              min="1"
+              max="60"
+              value={minBrokerGapPercent}
+              onChange={(event) => setMinBrokerGapPercent(Number(event.target.value))}
+            />
+          </label>
+          <label className="switch">
+            <input checked={includeInternal} onChange={(event) => setIncludeInternal(event.target.checked)} type="checkbox" />
+            Include internal topics
+          </label>
+        </div>
+      </section>
+
+      <div className="brokerPressureGrid">
+        {brokerPressure.map((broker) => (
+          <article className="brokerPressureCard" key={broker.brokerId}>
+            <div>
+              <strong>Broker {broker.brokerId}</strong>
+              <StatusPill tone={pressureTone(broker.disk?.pressure)} icon={HardDrive}>
+                {broker.disk ? `${broker.disk.usedPercent.toFixed(1)}% used` : "no disk telemetry"}
+              </StatusPill>
+            </div>
+            <div className="diskMeter" aria-label={`Broker ${broker.brokerId} disk usage`}>
+              <span style={{ width: `${Math.min(100, broker.disk?.usedPercent ?? 0)}%` }} />
+            </div>
+            <div className="brokerPressureMeta">
+              <span>{broker.disk ? formatBytes(broker.disk.freeBytes) : "unknown"} free</span>
+              <span>{broker.replicaCount} replicas</span>
+              <span>{broker.leaderCount} leaders</span>
+            </div>
+          </article>
+        ))}
+      </div>
+
+      {plan ? (
+        <>
+          <section className="metricStrip rebalanceSummary">
+            <Metric icon={ArrowRightLeft} label="Movements" value={plan.summary.movements} detail="planned replica moves" />
+            <Metric icon={HardDrive} label="Max disk" value={formatPercent(plan.summary.maxUsedPercent)} detail="highest broker usage" />
+            <Metric icon={HardDrive} label="Min disk" value={formatPercent(plan.summary.minUsedPercent)} detail="lowest broker usage" />
+            <Metric icon={Database} label="Partitions" value={plan.summary.partitionsEvaluated} detail="evaluated for placement" />
+            <Metric icon={ShieldCheck} label="Execution" value={plan.executable ? "Ready" : "Locked"} detail={plan.executable ? "backend accepts apply" : "requires opt-in"} />
+          </section>
+
+          {plan.warnings.length > 0 ? (
+            <section className="notice rebalanceWarnings">
+              {plan.warnings.map((warning) => (
+                <span key={warning}>{warning}</span>
+              ))}
+            </section>
+          ) : null}
+
+          <section className="surface">
+            <SurfaceHeader icon={ArrowRightLeft} title="Planned Movements" meta={`${plan.movements.length} moves`} />
+            <DataTable className="movementTable">
+              <div className="tableRow tableHead">
+                <span>Partition</span>
+                <span>Source</span>
+                <span>Target</span>
+                <span>Replicas</span>
+                <span>Risk</span>
+              </div>
+              {plan.movements.map((movement) => (
+                <div className="tableRow" key={`${movement.topic}-${movement.partition}`}>
+                  <span>
+                    <strong className="mono">{movement.topic}</strong>
+                    <small>partition {movement.partition}</small>
+                  </span>
+                  <span>Broker {movement.sourceBrokerId}</span>
+                  <span>Broker {movement.targetBrokerId}</span>
+                  <span className="mono">
+                    [{movement.currentReplicas.join(",")}] {"->"} [{movement.proposedReplicas.join(",")}]
+                  </span>
+                  <StatusPill tone={movement.leaderMove ? "warning" : "good"} icon={CircleDot}>
+                    {movement.leaderMove ? "leader move" : "follower move"}
+                  </StatusPill>
+                </div>
+              ))}
+            </DataTable>
+            {plan.movements.length === 0 ? <EmptyState title="No partition movements generated" /> : null}
+          </section>
+
+          <section className="surface reassignmentPayload">
+            <SurfaceHeader icon={ClipboardCopy} title="Reassignment Payload" meta="Kafka-compatible JSON" />
+            <pre>{JSON.stringify(plan.reassignment, null, 2)}</pre>
+            <footer>
+              <button className="secondaryButton" type="button" onClick={() => void copyPayload()}>
+                <ClipboardCopy size={17} />
+                {copied ? "Copied" : "Copy JSON"}
+              </button>
+              <button className="primaryButton" type="button" disabled={!plan.executable || busy} onClick={() => void executePlan()}>
+                <ArrowRightLeft size={17} />
+                {plan.executable ? "Apply reassignment" : "Execution locked"}
+              </button>
+            </footer>
+          </section>
+        </>
+      ) : (
+        <section className="surface">
+          <EmptyState title="Generate a plan to see proposed replica movements" />
+        </section>
+      )}
+    </div>
   );
 }
 
@@ -400,46 +659,45 @@ function TopicsView({
   );
 
   return (
-    <section className="stack">
-      <div className="sectionBar">
+    <div className="viewStack">
+      <div className="viewHeader">
         <div>
           <h2>Topics</h2>
-          <p className="muted">{filteredTopics.length} visible topics</p>
+          <p>{filteredTopics.length} live topics from Kafka metadata.</p>
         </div>
-        <button className="primary" type="button" onClick={() => setCreating(true)}>
-          <Plus size={16} />
-          <span>Create topic</span>
+        <button className="primaryButton" type="button" onClick={() => setCreating(true)}>
+          <Plus size={17} />
+          Create topic
         </button>
       </div>
 
       <div className="filterBar">
-        <div className="searchBox">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search topics" />
-        </div>
-        <label className="toggle">
+        <SearchField value={query} onChange={setQuery} placeholder="Search topics" />
+        <label className="switch">
           <input checked={showInternal} onChange={(event) => setShowInternal(event.target.checked)} type="checkbox" />
-          Internal topics
+          Show internal
         </label>
       </div>
 
-      <section className="panel">
-        <div className="table topicTable">
-          <div className="row header">
-            <span>Name</span>
+      <section className="surface">
+        <DataTable className="topicTable">
+          <div className="tableRow tableHead">
+            <span>Topic</span>
             <span>Partitions</span>
             <span>Replicas</span>
-            <span>Type</span>
+            <span>Class</span>
           </div>
           {filteredTopics.map((topic) => (
-            <div className="row" key={topic.name}>
-              <span className="mono">{topic.name}</span>
+            <div className="tableRow" key={topic.name}>
+              <span className="mono strongText">{topic.name}</span>
               <span>{topic.partitions}</span>
               <span>{topic.replicas}</span>
-              <span className={`chip ${topic.isInternal ? "neutral" : "success"}`}>{topic.isInternal ? "internal" : "user"}</span>
+              <StatusPill tone={topic.isInternal ? "neutral" : "good"} icon={Layers3}>
+                {topic.isInternal ? "internal" : "user"}
+              </StatusPill>
             </div>
           ))}
-        </div>
+        </DataTable>
         {filteredTopics.length === 0 ? <EmptyState title="No topics match this filter" /> : null}
       </section>
 
@@ -454,7 +712,7 @@ function TopicsView({
           }}
         />
       ) : null}
-    </section>
+    </div>
   );
 }
 
@@ -499,17 +757,17 @@ function CreateTopicDialog({
 
   return (
     <div className="modalScrim">
-      <form className="modal" onSubmit={(event) => void submit(event)}>
-        <div className="modalHeader">
+      <form className="modalSurface" onSubmit={(event) => void submit(event)}>
+        <header>
           <div>
-            <h2>Create Topic</h2>
-            <p className="muted">Validated against broker count and naming policy.</p>
+            <h2>Create topic</h2>
+            <p>Validated against broker count and EventHelm naming policy.</p>
           </div>
           <button className="iconButton" type="button" onClick={onClose} title="Close">
             <X size={18} />
           </button>
-        </div>
-        {error ? <div className="error compact">{error}</div> : null}
+        </header>
+        {error ? <div className="notice error">{error}</div> : null}
         <label>
           Topic name
           <input value={name} onChange={(event) => setName(event.target.value)} placeholder="orders.created" required />
@@ -520,7 +778,7 @@ function CreateTopicDialog({
             <input type="number" min="1" max="200" value={partitions} onChange={(event) => setPartitions(Number(event.target.value))} />
           </label>
           <label>
-            Replication
+            Replication factor
             <input
               type="number"
               min="1"
@@ -532,7 +790,7 @@ function CreateTopicDialog({
         </div>
         <div className="formGrid">
           <label>
-            Cleanup
+            Cleanup policy
             <select value={cleanupPolicy} onChange={(event) => setCleanupPolicy(event.target.value as "delete" | "compact")}>
               <option value="delete">delete</option>
               <option value="compact">compact</option>
@@ -543,22 +801,21 @@ function CreateTopicDialog({
             <input value={retentionMs} onChange={(event) => setRetentionMs(event.target.value)} placeholder="604800000" />
           </label>
         </div>
-        <div className="reviewBox">
-          <strong>Review</strong>
+        <div className="reviewBand">
+          <ShieldCheck size={18} />
           <span>
-            Brokara will create <span className="mono">{name || "topic.name"}</span> with {partitions} partitions and RF{" "}
-            {replicationFactor}.
+            Creates <strong className="mono">{name || "topic.name"}</strong> with {partitions} partitions and RF {replicationFactor}.
           </span>
         </div>
-        <div className="modalActions">
-          <button className="secondary" type="button" onClick={onClose}>
+        <footer>
+          <button className="secondaryButton" type="button" onClick={onClose}>
             Cancel
           </button>
-          <button className="primary" disabled={busy} type="submit">
-            <Plus size={16} />
+          <button className="primaryButton" disabled={busy} type="submit">
+            <Plus size={17} />
             Create
           </button>
-        </div>
+        </footer>
       </form>
     </div>
   );
@@ -590,7 +847,7 @@ function MessagesView({
   setFromBeginning: (value: boolean) => void;
 }) {
   const [key, setKey] = useState("");
-  const [value, setValue] = useState('{"hello":"world"}');
+  const [value, setValue] = useState("");
   const [formatJson, setFormatJson] = useState(true);
 
   async function produce(event: FormEvent) {
@@ -600,7 +857,7 @@ function MessagesView({
   }
 
   return (
-    <section className="stack">
+    <div className="viewStack">
       <div className="filterBar">
         <select value={selectedTopic} onChange={(event) => setSelectedTopic(event.target.value)}>
           {topics
@@ -612,28 +869,26 @@ function MessagesView({
             ))}
         </select>
         <input type="number" min="1" max="100" value={limit} onChange={(event) => setLimit(Number(event.target.value))} title="Limit" />
-        <label className="toggle">
+        <label className="switch">
           <input checked={fromBeginning} onChange={(event) => setFromBeginning(event.target.checked)} type="checkbox" />
           From beginning
         </label>
-        <button className="secondary" type="button" onClick={() => void browse()}>
-          <Activity size={16} />
-          <span>Browse</span>
+        <button className="secondaryButton" type="button" onClick={() => void browse()}>
+          <Activity size={17} />
+          Browse
         </button>
       </div>
 
-      <div className="splitGrid wide">
-        <section className="panel">
-          <div className="panelHeader">
-            <h2>Browse Records</h2>
-            <label className="toggle">
-              <input checked={formatJson} onChange={(event) => setFormatJson(event.target.checked)} type="checkbox" />
-              Format JSON
-            </label>
-          </div>
-          <div className="records">
+      <div className="messageGrid">
+        <section className="surface">
+          <SurfaceHeader icon={MessageSquareText} title="Records" meta={`${messages.length} loaded`} />
+          <label className="inlineSwitch">
+            <input checked={formatJson} onChange={(event) => setFormatJson(event.target.checked)} type="checkbox" />
+            Format JSON
+          </label>
+          <div className="recordList">
             {messages.map((message) => (
-              <article className="record" key={`${message.partition}-${message.offset}`}>
+              <article className="recordBlock" key={`${message.partition}-${message.offset}`}>
                 <div>
                   <span className="mono">partition {message.partition}</span>
                   <span className="mono">offset {message.offset}</span>
@@ -646,26 +901,23 @@ function MessagesView({
           </div>
         </section>
 
-        <form className="panel produceTool" onSubmit={(event) => void produce(event)}>
-          <div className="panelHeader">
-            <h2>Produce Test Message</h2>
-            <span className="chip warning">audited</span>
-          </div>
+        <form className="surface produceSurface" onSubmit={(event) => void produce(event)}>
+          <SurfaceHeader icon={Send} title="Produce Record" meta="audited" />
           <label>
             Optional key
             <input value={key} onChange={(event) => setKey(event.target.value)} placeholder="message-key" />
           </label>
           <label>
             Value
-            <textarea value={value} onChange={(event) => setValue(event.target.value)} />
+            <textarea value={value} onChange={(event) => setValue(event.target.value)} placeholder='{"type":"event","source":"console"}' required />
           </label>
-          <button className="primary" type="submit">
-            <Send size={16} />
-            <span>Produce</span>
+          <button className="primaryButton" type="submit">
+            <Send size={17} />
+            Produce
           </button>
         </form>
       </div>
-    </section>
+    </div>
   );
 }
 
@@ -673,33 +925,33 @@ function ConsumersView({ groups }: { groups: ConsumerGroup[] }) {
   const [query, setQuery] = useState("");
   const filtered = groups.filter((group) => group.groupId.toLowerCase().includes(query.toLowerCase()));
   return (
-    <section className="stack">
-      <div className="filterBar">
-        <div className="searchBox">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search consumer groups" />
-        </div>
-      </div>
-      <section className="panel">
-        <div className="table consumerTable">
-          <div className="row header">
+    <TableView
+      title="Consumer Groups"
+      subtitle={`${filtered.length} consumer groups reported by Kafka`}
+      search={<SearchField value={query} onChange={setQuery} placeholder="Search groups" />}
+      empty="No consumer groups found"
+      rows={filtered}
+      render={() => (
+        <DataTable className="consumerTable">
+          <div className="tableRow tableHead">
             <span>Group</span>
             <span>Protocol</span>
             <span>State</span>
             <span>Members</span>
           </div>
           {filtered.map((group) => (
-            <div className="row" key={group.groupId}>
-              <span className="mono">{group.groupId}</span>
+            <div className="tableRow" key={group.groupId}>
+              <span className="mono strongText">{group.groupId}</span>
               <span>{group.protocolType || "n/a"}</span>
-              <span className="chip neutral">{group.state ?? "unknown"}</span>
+              <StatusPill tone="neutral" icon={CircleDot}>
+                {group.state ?? "unknown"}
+              </StatusPill>
               <span>{group.members ?? 0}</span>
             </div>
           ))}
-        </div>
-        {filtered.length === 0 ? <EmptyState title="No consumer groups found" /> : null}
-      </section>
-    </section>
+        </DataTable>
+      )}
+    />
   );
 }
 
@@ -707,48 +959,44 @@ function CollectorsView({ collectors, brokerCount }: { collectors: CollectorStat
   const [query, setQuery] = useState("");
   const filtered = collectors.filter((collector) => collector.heartbeat.collectorId.toLowerCase().includes(query.toLowerCase()));
   return (
-    <section className="stack">
-      <div className="sectionBar">
-        <div>
-          <h2>Broker Collectors</h2>
-          <p className="muted">
-            {collectors.length} registered for {brokerCount} brokers
-          </p>
-        </div>
-      </div>
-      <div className="filterBar">
-        <div className="searchBox">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search collectors" />
-        </div>
-      </div>
-      <section className="panel">
-        <div className="table collectorTable">
-          <div className="row header">
+    <TableView
+      title="Broker Collectors"
+      subtitle={`${collectors.length} registered for ${brokerCount} brokers`}
+      search={<SearchField value={query} onChange={setQuery} placeholder="Search collectors" />}
+      empty="No collectors found"
+      rows={filtered}
+      render={() => (
+        <DataTable className="collectorTable">
+          <div className="tableRow tableHead">
             <span>Collector</span>
             <span>Broker</span>
             <span>Status</span>
             <span>Last seen</span>
+            <span>Disk</span>
             <span>Snapshot</span>
           </div>
           {filtered.map((collector) => {
             const freshness = collectorFreshness(collector);
             return (
-              <div className="row" key={collector.heartbeat.collectorId}>
-                <span className="mono">{collector.heartbeat.collectorId}</span>
+              <div className="tableRow" key={collector.heartbeat.collectorId}>
+                <span className="mono strongText">{collector.heartbeat.collectorId}</span>
                 <span>{collector.heartbeat.brokerId}</span>
-                <span className={`chip ${freshness === "online" ? "success" : "warning"}`}>{freshness}</span>
+                <StatusPill tone={freshness === "online" ? "good" : "warning"} icon={CircleDot}>
+                  {freshness}
+                </StatusPill>
                 <span>{formatAge(collector.heartbeat.observedAt)}</span>
+                <StatusPill tone={pressureTone(collector.lastSnapshot?.disk?.pressure)} icon={HardDrive}>
+                  {collector.lastSnapshot?.disk ? `${collector.lastSnapshot.disk.usedPercent.toFixed(1)}%` : "unknown"}
+                </StatusPill>
                 <span>
                   {collector.lastSnapshot?.brokerCount ?? 0} brokers / {collector.lastSnapshot?.topicCount ?? 0} topics
                 </span>
               </div>
             );
           })}
-        </div>
-        {filtered.length === 0 ? <EmptyState title="No collectors found" /> : null}
-      </section>
-    </section>
+        </DataTable>
+      )}
+    />
   );
 }
 
@@ -758,16 +1006,15 @@ function AuditView({ audit }: { audit: AuditEvent[] }) {
     `${event.action} ${event.resourceName ?? ""} ${event.actor}`.toLowerCase().includes(query.toLowerCase())
   );
   return (
-    <section className="stack">
-      <div className="filterBar">
-        <div className="searchBox">
-          <Search size={16} />
-          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search audit log" />
-        </div>
-      </div>
-      <section className="panel">
-        <div className="table auditTable">
-          <div className="row header">
+    <TableView
+      title="Audit"
+      subtitle={`${filtered.length} in-memory audit events`}
+      search={<SearchField value={query} onChange={setQuery} placeholder="Search audit" />}
+      empty="No audit events found"
+      rows={filtered}
+      render={() => (
+        <DataTable className="auditTable">
+          <div className="tableRow tableHead">
             <span>Time</span>
             <span>Action</span>
             <span>Resource</span>
@@ -775,42 +1022,88 @@ function AuditView({ audit }: { audit: AuditEvent[] }) {
             <span>Details</span>
           </div>
           {filtered.map((event) => (
-            <div className="row" key={event.id}>
+            <div className="tableRow" key={event.id}>
               <span>{new Date(event.createdAt).toLocaleString()}</span>
-              <span className="mono">{event.action}</span>
+              <span className="mono strongText">{event.action}</span>
               <span>{event.resourceName ?? event.resourceType ?? "n/a"}</span>
               <span>{event.actor}</span>
               <span className="mono detailText">{event.details ? JSON.stringify(event.details) : "n/a"}</span>
             </div>
           ))}
-        </div>
-        {filtered.length === 0 ? <EmptyState title="No audit events found" /> : null}
-      </section>
-    </section>
+        </DataTable>
+      )}
+    />
   );
 }
 
-function Stat({ icon: Icon, label, value, detail }: { icon: LucideIcon; label: string; value: number; detail: string }) {
+function TableView<T>({
+  title,
+  subtitle,
+  search,
+  empty,
+  rows,
+  render
+}: {
+  title: string;
+  subtitle: string;
+  search: ReactNode;
+  empty: string;
+  rows: T[];
+  render: () => ReactNode;
+}) {
   return (
-    <div className="stat">
-      <Icon size={20} />
-      <span>{label}</span>
-      <strong>{value}</strong>
-      <small>{detail}</small>
+    <div className="viewStack">
+      <div className="viewHeader">
+        <div>
+          <h2>{title}</h2>
+          <p>{subtitle}</p>
+        </div>
+      </div>
+      <div className="filterBar">{search}</div>
+      <section className="surface">
+        {render()}
+        {rows.length === 0 ? <EmptyState title={empty} /> : null}
+      </section>
     </div>
   );
 }
 
+function Metric({ icon: Icon, label, value, detail }: { icon: LucideIcon; label: string; value: number | string; detail: string }) {
+  return (
+    <article className="metric">
+      <Icon size={18} />
+      <span>{label}</span>
+      <strong>{value}</strong>
+      <small>{detail}</small>
+    </article>
+  );
+}
+
+function SurfaceHeader({ icon: Icon, title, meta }: { icon: LucideIcon; title: string; meta: string }) {
+  return (
+    <header className="surfaceHeader">
+      <div>
+        <Icon size={18} />
+        <h2>{title}</h2>
+      </div>
+      <span>{meta}</span>
+    </header>
+  );
+}
+
+function DataTable({ className, children }: { className: string; children: ReactNode }) {
+  return <div className={`dataTable ${className}`}>{children}</div>;
+}
+
 function FindingList({ findings }: { findings: AgentFinding[] }) {
   if (findings.length === 0) {
-    return <EmptyState title="No agent findings" />;
+    return <EmptyState title="No advisor findings" />;
   }
-
   return (
     <div className="findingList">
       {findings.map((finding) => (
         <article key={finding.id}>
-          <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+          <Severity severity={finding.severity} />
           <div>
             <strong>{finding.title}</strong>
             <p>{finding.recommendation}</p>
@@ -823,16 +1116,16 @@ function FindingList({ findings }: { findings: AgentFinding[] }) {
 
 function FindingTable({ findings }: { findings: AgentFinding[] }) {
   return (
-    <div className="table findingTable">
-      <div className="row header">
+    <DataTable className="findingTable">
+      <div className="tableRow tableHead">
         <span>Severity</span>
         <span>Agent</span>
         <span>Finding</span>
         <span>Recommendation</span>
       </div>
       {findings.map((finding) => (
-        <div className="row" key={finding.id}>
-          <span className={`severity ${finding.severity}`}>{finding.severity}</span>
+        <div className="tableRow" key={finding.id}>
+          <Severity severity={finding.severity} />
           <span className="mono">{finding.agentId}</span>
           <span>
             <strong>{finding.title}</strong>
@@ -841,19 +1134,19 @@ function FindingTable({ findings }: { findings: AgentFinding[] }) {
           <span>{finding.recommendation}</span>
         </div>
       ))}
-    </div>
+    </DataTable>
   );
 }
 
 function AuditTimeline({ audit }: { audit: AuditEvent[] }) {
   if (audit.length === 0) {
-    return <EmptyState title="No recent activity" />;
+    return <EmptyState title="No audit events yet" />;
   }
   return (
     <div className="timeline">
       {audit.map((event) => (
         <article key={event.id}>
-          <Clock3 size={15} />
+          <Clock3 size={16} />
           <div>
             <strong>{event.action}</strong>
             <span>
@@ -862,6 +1155,28 @@ function AuditTimeline({ audit }: { audit: AuditEvent[] }) {
           </div>
         </article>
       ))}
+    </div>
+  );
+}
+
+function StatusPill({ tone, icon: Icon, children }: { tone: "good" | "warning" | "bad" | "neutral"; icon: LucideIcon; children: ReactNode }) {
+  return (
+    <span className={`statusPill ${tone}`}>
+      <Icon size={13} />
+      {children}
+    </span>
+  );
+}
+
+function Severity({ severity }: { severity: AgentFinding["severity"] }) {
+  return <span className={`severity ${severity}`}>{severity}</span>;
+}
+
+function SearchField({ value, onChange, placeholder }: { value: string; onChange: (value: string) => void; placeholder: string }) {
+  return (
+    <div className="searchField">
+      <Search size={16} />
+      <input value={value} onChange={(event) => onChange(event.target.value)} placeholder={placeholder} />
     </div>
   );
 }
@@ -875,17 +1190,63 @@ function EmptyState({ title }: { title: string }) {
   );
 }
 
-function summarizeHealth(overview: Overview | null, agentRun: AgentRun | null) {
-  const hasCritical = agentRun?.findings.some((finding) => finding.severity === "critical");
-  const hasHigh = agentRun?.findings.some((finding) => finding.severity === "high");
+function brokerPressureFromOverview(overview: Overview): RebalancePlan["brokerPressure"] {
+  const collectorsByBroker = new Map(overview.collectors.map((collector) => [Number(collector.heartbeat.brokerId), collector]));
+  return overview.brokers.map((broker) => {
+    const collector = collectorsByBroker.get(broker.nodeId);
+    return {
+      brokerId: broker.nodeId,
+      host: broker.host,
+      port: broker.port,
+      replicaCount: 0,
+      leaderCount: 0,
+      disk: collector?.lastSnapshot?.disk
+    };
+  });
+}
+
+function pressureTone(pressure?: "normal" | "watch" | "high" | "critical"): "good" | "warning" | "bad" | "neutral" {
+  if (pressure === "critical" || pressure === "high") {
+    return "bad";
+  }
+  if (pressure === "watch") {
+    return "warning";
+  }
+  if (pressure === "normal") {
+    return "good";
+  }
+  return "neutral";
+}
+
+function formatBytes(value?: number) {
+  if (value === undefined) {
+    return "unknown";
+  }
+  const units = ["B", "KB", "MB", "GB", "TB", "PB"];
+  let next = value;
+  let unit = 0;
+  while (next >= 1024 && unit < units.length - 1) {
+    next /= 1024;
+    unit += 1;
+  }
+  return `${next.toFixed(next >= 10 || unit === 0 ? 0 : 1)} ${units[unit]}`;
+}
+
+function formatPercent(value?: number) {
+  return value === undefined ? "n/a" : `${value.toFixed(1)}%`;
+}
+
+function summarizePosture(overview: Overview | null, agentRun: AgentRun | null) {
+  const critical = agentRun?.findings.some((finding) => finding.severity === "critical");
+  const high = agentRun?.findings.some((finding) => finding.severity === "high");
   const freshCollectors = overview?.collectors.filter((collector) => collectorFreshness(collector) === "online").length ?? 0;
-  if (hasCritical) {
-    return { label: "Critical", detail: "Agent intervention needed", tone: "critical" };
+  if (critical) {
+    return { label: "Critical", detail: "Immediate action required", tone: "bad" };
   }
-  if (hasHigh) {
-    return { label: "Needs attention", detail: "High-priority findings open", tone: "warning" };
+  if (high) {
+    return { label: "Attention", detail: "High-priority findings open", tone: "warning" };
   }
-  return { label: "Operational", detail: `${freshCollectors} collectors fresh`, tone: "success" };
+  return { label: "Operational", detail: `${freshCollectors} collectors fresh`, tone: "good" };
 }
 
 function collectorFreshness(collector: CollectorState): "online" | "stale" {
@@ -913,10 +1274,10 @@ function prettyJson(value?: string) {
 
 function scoreTone(score: number) {
   if (score >= 85) {
-    return "success";
+    return "good";
   }
   if (score >= 65) {
     return "warning";
   }
-  return "critical";
+  return "bad";
 }

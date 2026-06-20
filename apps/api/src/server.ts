@@ -4,15 +4,18 @@ import { z } from "zod";
 import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
-import { getCorsOrigin, getPort, getSecurityStatus, loadClusters } from "./config.js";
+import { getCorsOrigin, getPort, getSecurityStatus, isRebalanceExecutionEnabled, loadClusters } from "./config.js";
 import {
+  alterPartitionAssignments,
   browseMessages,
   createTopic,
   describeCluster,
   listConsumerGroups,
+  listPartitionPlacements,
   listTopics,
   produceMessage
 } from "./kafka.js";
+import { buildDiskRebalancePlan } from "./rebalance.js";
 import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
 
 const clusters = loadClusters();
@@ -40,9 +43,15 @@ function badRequest(message: string) {
   return error;
 }
 
+function forbidden(message: string) {
+  const error = new Error(message);
+  (error as Error & { statusCode: number }).statusCode = 403;
+  return error;
+}
+
 app.get("/health", async () => ({
   ok: true,
-  service: "brokara-api",
+  service: "eventhelm-api",
   timestamp: new Date().toISOString()
 }));
 
@@ -98,7 +107,7 @@ app.post("/api/clusters/:clusterId/topics", async (request) => {
     .parse(request.body);
 
   if (body.name.startsWith("__")) {
-    throw badRequest("Brokara will not create internal Kafka topics.");
+    throw badRequest("EventHelm will not create internal Kafka topics.");
   }
 
   if (!/^[a-z0-9]+([._-][a-z0-9]+)+$/.test(body.name)) {
@@ -142,7 +151,7 @@ app.post("/api/clusters/:clusterId/messages/produce", async (request) => {
     .parse(request.body);
 
   if (body.topic.startsWith("__")) {
-    throw badRequest("Brokara will not produce messages to internal Kafka topics.");
+    throw badRequest("EventHelm will not produce messages to internal Kafka topics.");
   }
 
   const result = await produceMessage(getCluster(params.clusterId), body);
@@ -170,6 +179,87 @@ app.get("/api/clusters/:clusterId/messages", async (request) => {
     .parse(request.query);
 
   return browseMessages(getCluster(params.clusterId), query);
+});
+
+app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  const body = z
+    .object({
+      maxMovements: z.coerce.number().int().min(1).max(100).default(12),
+      includeInternal: z.boolean().default(false),
+      sourceBrokerId: z.coerce.number().int().nonnegative().optional(),
+      targetBrokerIds: z.array(z.coerce.number().int().nonnegative()).optional(),
+      highWatermarkPercent: z.coerce.number().min(50).max(99).default(85),
+      minBrokerGapPercent: z.coerce.number().min(1).max(60).default(10)
+    })
+    .parse(request.body ?? {});
+
+  const cluster = getCluster(params.clusterId);
+  const [description, placements] = await Promise.all([
+    describeCluster(cluster),
+    listPartitionPlacements(cluster, body.includeInternal)
+  ]);
+  const plan = buildDiskRebalancePlan({
+    clusterId: params.clusterId,
+    brokers: description.brokers,
+    collectors: listCollectors().filter((collector) => collector.heartbeat.clusterId === params.clusterId),
+    placements,
+    input: {
+      ...body,
+      executionEnabled: isRebalanceExecutionEnabled()
+    }
+  });
+
+  recordAudit({
+    actor: actorFromRequest(request),
+    action: "rebalance.plan",
+    clusterId: params.clusterId,
+    resourceType: "cluster",
+    resourceName: params.clusterId,
+    details: {
+      movements: plan.summary.movements,
+      sources: plan.summary.sourceBrokerIds,
+      targets: plan.summary.targetBrokerIds
+    }
+  });
+
+  return plan;
+});
+
+app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
+  assertWriteAllowed(request);
+  if (!isRebalanceExecutionEnabled()) {
+    throw forbidden("Rebalance execution is locked. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true after approvals and RBAC are configured.");
+  }
+
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  const body = z
+    .object({
+      topics: z.array(
+        z.object({
+          topic: z.string().min(1),
+          partitionAssignment: z.array(
+            z.object({
+              partition: z.number().int().nonnegative(),
+              replicas: z.array(z.number().int().nonnegative()).min(1)
+            })
+          )
+        })
+      )
+    })
+    .parse(request.body);
+
+  await alterPartitionAssignments(getCluster(params.clusterId), body.topics);
+  recordAudit({
+    actor: actorFromRequest(request),
+    action: "rebalance.execute",
+    clusterId: params.clusterId,
+    resourceType: "cluster",
+    resourceName: params.clusterId,
+    details: { topics: body.topics.length }
+  });
+
+  return { accepted: true };
 });
 
 app.get("/api/collectors", async () => listCollectors());
@@ -206,6 +296,17 @@ app.post("/api/collectors/snapshot", async (request) => {
       topicCount: z.number(),
       controllerId: z.number().optional(),
       kafkaClusterId: z.string().optional(),
+      disk: z
+        .object({
+          path: z.string().min(1),
+          totalBytes: z.number().nonnegative(),
+          freeBytes: z.number().nonnegative(),
+          usedBytes: z.number().nonnegative(),
+          usedPercent: z.number().min(0).max(100),
+          pressure: z.enum(["normal", "watch", "high", "critical"]),
+          sampledAt: z.string().min(1)
+        })
+        .optional(),
       brokers: z.array(
         z.object({
           nodeId: z.number(),

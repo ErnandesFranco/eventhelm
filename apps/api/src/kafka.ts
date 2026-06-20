@@ -1,9 +1,9 @@
 import { Kafka, logLevel } from "kafkajs";
-import type { ClusterConfig, ConsumerGroupSummary, TopicSummary } from "./types.js";
+import type { ClusterConfig, ConsumerGroupSummary, PartitionPlacement, RebalancePlan, TopicSummary } from "./types.js";
 
 function createKafka(cluster: ClusterConfig): Kafka {
   return new Kafka({
-    clientId: "brokara-api",
+    clientId: "eventhelm-api",
     brokers: cluster.brokers,
     ssl: cluster.ssl,
     sasl: toKafkaSasl(cluster.sasl),
@@ -52,6 +52,40 @@ export async function listTopics(cluster: ClusterConfig): Promise<TopicSummary[]
         };
       })
       .sort((left, right) => left.name.localeCompare(right.name));
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export async function listPartitionPlacements(cluster: ClusterConfig, includeInternal = false): Promise<PartitionPlacement[]> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const metadata = await admin.fetchTopicMetadata();
+    return metadata.topics
+      .filter((topic) => includeInternal || !topic.name.startsWith("__"))
+      .flatMap((topic) =>
+        topic.partitions.map((partition) => ({
+          topic: topic.name,
+          partition: partition.partitionId,
+          leader: partition.leader,
+          replicas: partition.replicas,
+          isr: partition.isr,
+          offlineReplicas: partition.offlineReplicas ?? [],
+          isInternal: topic.name.startsWith("__")
+        }))
+      )
+      .sort((left, right) => left.topic.localeCompare(right.topic) || left.partition - right.partition);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export async function alterPartitionAssignments(cluster: ClusterConfig, topics: RebalancePlan["kafkaJsRequest"]) {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    await admin.alterPartitionReassignments({ topics, timeout: 10_000 });
   } finally {
     await admin.disconnect();
   }
@@ -186,7 +220,7 @@ export async function browseMessages(
 ) {
   const kafka = createKafka(cluster);
   const consumer = kafka.consumer({
-    groupId: `brokara-browser-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    groupId: `eventhelm-browser-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     allowAutoTopicCreation: false
   });
   const messages: Array<{

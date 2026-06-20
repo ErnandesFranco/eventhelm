@@ -22,17 +22,18 @@ function bearerToken(request: FastifyRequest): string | undefined {
 }
 
 export function actorFromRequest(request: FastifyRequest): string {
-  const actor = request.headers["x-brokara-actor"];
+  const actor = request.headers["x-eventhelm-actor"] ?? request.headers["x-brokara-actor"];
   return Array.isArray(actor) ? actor[0] ?? "system" : actor ?? "system";
 }
 
 export function assertWriteAllowed(request: FastifyRequest) {
   const security = getSecurityStatus();
   if (security.authMode === "token" && bearerToken(request) !== getApiToken()) {
-    throw unauthorized("A valid Brokara API bearer token is required.");
+    throw unauthorized("A valid EventHelm API bearer token is required.");
   }
 
-  if (security.writeConfirmationRequired && request.headers["x-brokara-confirm"] !== "true") {
+  const confirmed = request.headers["x-eventhelm-confirm"] ?? request.headers["x-brokara-confirm"];
+  if (security.writeConfirmationRequired && confirmed !== "true") {
     throw preconditionRequired("Write confirmation is required for this action.");
   }
 }
@@ -43,7 +44,8 @@ export function assertCollectorAllowed(request: FastifyRequest) {
     return;
   }
 
-  if (request.headers["x-brokara-collector-token"] !== token) {
-    throw unauthorized("A valid Brokara collector token is required.");
+  const collectorToken = request.headers["x-eventhelm-collector-token"] ?? request.headers["x-brokara-collector-token"];
+  if (collectorToken !== token) {
+    throw unauthorized("A valid EventHelm collector token is required.");
   }
 }

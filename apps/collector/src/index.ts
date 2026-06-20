@@ -1,4 +1,5 @@
 import os from "node:os";
+import { statfs } from "node:fs/promises";
 import { Kafka, logLevel } from "kafkajs";
 
 const version = "0.1.0";
@@ -8,7 +9,8 @@ const controlPlaneUrl = requiredEnv("CONTROL_PLANE_URL");
 const clusterId = requiredEnv("CLUSTER_ID");
 const brokerId = requiredEnv("BROKER_ID");
 const collectorId = process.env.COLLECTOR_ID ?? `${clusterId}-broker-${brokerId}`;
-const collectorToken = process.env.BROKARA_COLLECTOR_TOKEN;
+const collectorToken = process.env.EVENTHELM_COLLECTOR_TOKEN ?? process.env.BROKARA_COLLECTOR_TOKEN;
+const brokerDataPath = process.env.BROKER_DATA_PATH;
 const kafkaBrokers = requiredEnv("KAFKA_BROKERS")
   .split(",")
   .map((broker) => broker.trim())
@@ -17,7 +19,7 @@ const intervalMs = Number(process.env.COLLECTOR_INTERVAL_MS ?? 10000);
 let stopping = false;
 
 const kafka = new Kafka({
-  clientId: `brokara-collector-${collectorId}`,
+  clientId: `eventhelm-collector-${collectorId}`,
   brokers: kafkaBrokers,
   logLevel: logLevel.ERROR
 });
@@ -48,7 +50,7 @@ async function postJson(path: string, body: unknown) {
   };
 
   if (collectorToken) {
-    headers["x-brokara-collector-token"] = collectorToken;
+    headers["x-eventhelm-collector-token"] = collectorToken;
   }
 
   const response = await fetch(`${controlPlaneUrl}${path}`, {
@@ -77,6 +79,7 @@ async function sendSnapshot() {
       topicCount: topics.filter((topic) => !topic.startsWith("__")).length,
       controllerId: cluster.controller,
       kafkaClusterId: cluster.clusterId,
+      disk: brokerDataPath ? await readDiskTelemetry(brokerDataPath) : undefined,
       brokers: cluster.brokers.map((broker) => ({
         nodeId: broker.nodeId,
         host: broker.host,
@@ -86,6 +89,36 @@ async function sendSnapshot() {
   } finally {
     await admin.disconnect();
   }
+}
+
+async function readDiskTelemetry(path: string) {
+  const stats = await statfs(path);
+  const totalBytes = Number(stats.blocks) * Number(stats.bsize);
+  const freeBytes = Number(stats.bavail) * Number(stats.bsize);
+  const usedBytes = Math.max(0, totalBytes - freeBytes);
+  const usedPercent = totalBytes > 0 ? (usedBytes / totalBytes) * 100 : 0;
+  return {
+    path,
+    totalBytes,
+    freeBytes,
+    usedBytes,
+    usedPercent: Number(usedPercent.toFixed(2)),
+    pressure: diskPressure(usedPercent),
+    sampledAt: new Date().toISOString()
+  };
+}
+
+function diskPressure(usedPercent: number) {
+  if (usedPercent >= 92) {
+    return "critical";
+  }
+  if (usedPercent >= 85) {
+    return "high";
+  }
+  if (usedPercent >= 75) {
+    return "watch";
+  }
+  return "normal";
 }
 
 async function tick() {

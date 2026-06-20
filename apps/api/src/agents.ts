@@ -127,7 +127,7 @@ function runSentinel(context: AgentContext): AgentFinding[] {
         "high",
         "API is running in dev auth mode",
         "Mutating endpoints are intentionally open for the local lab.",
-        "Set BROKARA_AUTH_MODE=token and BROKARA_API_TOKEN before exposing the API outside localhost.",
+        "Set EVENTHELM_AUTH_MODE=token and EVENTHELM_API_TOKEN before exposing the API outside localhost.",
         "security"
       )
     );
@@ -140,7 +140,7 @@ function runSentinel(context: AgentContext): AgentFinding[] {
         "medium",
         "Collectors are not authenticated",
         "Any workload that can reach the API could submit collector heartbeats or snapshots.",
-        "Set BROKARA_COLLECTOR_TOKEN on the API and collectors for shared-secret identity until mTLS is added.",
+        "Set EVENTHELM_COLLECTOR_TOKEN on the API and collectors for shared-secret identity until mTLS is added.",
         "collector"
       )
     );
@@ -153,7 +153,7 @@ function runSentinel(context: AgentContext): AgentFinding[] {
         "medium",
         "CORS is open",
         "The API currently accepts browser requests from any origin.",
-        "Set BROKARA_CORS_ORIGIN to the deployed console origin in shared environments.",
+        "Set EVENTHELM_CORS_ORIGIN to the deployed console origin in shared environments.",
         "security"
       )
     );
@@ -166,6 +166,9 @@ function runOperator(context: AgentContext): AgentFinding[] {
   const findings: AgentFinding[] = [];
   const freshCollectors = context.collectors.filter((collector) => collectorFreshness(collector) === "online");
   const staleCollectors = context.collectors.filter((collector) => collectorFreshness(collector) === "stale");
+  const pressuredCollectors = context.collectors.filter((collector) =>
+    ["high", "critical"].includes(collector.lastSnapshot?.disk?.pressure ?? "")
+  );
 
   if (freshCollectors.length < context.brokerCount) {
     findings.push(
@@ -202,6 +205,23 @@ function runOperator(context: AgentContext): AgentFinding[] {
         "The cluster has no described consumer groups right now.",
         "Once lag APIs are added, use this as a health signal rather than a warning.",
         "consumer-group"
+      )
+    );
+  }
+
+  if (pressuredCollectors.length > 0) {
+    const worst = pressuredCollectors.sort(
+      (left, right) => (right.lastSnapshot?.disk?.usedPercent ?? 0) - (left.lastSnapshot?.disk?.usedPercent ?? 0)
+    )[0];
+    findings.push(
+      finding(
+        "operator",
+        worst?.lastSnapshot?.disk?.pressure === "critical" ? "critical" : "high",
+        "Broker disk pressure needs partition movement",
+        `Broker ${worst?.heartbeat.brokerId ?? "unknown"} is at ${worst?.lastSnapshot?.disk?.usedPercent ?? 0}% disk usage.`,
+        "Open the Rebalance view and generate a disk-pressure reassignment plan before the broker reaches log-dir exhaustion.",
+        "broker",
+        worst?.heartbeat.brokerId
       )
     );
   }

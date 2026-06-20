@@ -31,11 +31,24 @@ export type CollectorHeartbeat = {
   observedAt: string;
 };
 
+export type DiskPressure = "normal" | "watch" | "high" | "critical";
+
+export type DiskTelemetry = {
+  path: string;
+  totalBytes: number;
+  freeBytes: number;
+  usedBytes: number;
+  usedPercent: number;
+  pressure: DiskPressure;
+  sampledAt: string;
+};
+
 export type CollectorSnapshot = CollectorHeartbeat & {
   brokerCount: number;
   topicCount: number;
   controllerId?: number;
   kafkaClusterId?: string;
+  disk?: DiskTelemetry;
   brokers: Array<{
     nodeId: number;
     host: string;
@@ -53,6 +66,71 @@ export type TopicSummary = {
   partitions: number;
   replicas: number;
   isInternal: boolean;
+};
+
+export type PartitionPlacement = {
+  topic: string;
+  partition: number;
+  leader: number;
+  replicas: number[];
+  isr: number[];
+  offlineReplicas: number[];
+  isInternal: boolean;
+};
+
+export type RebalanceMovement = {
+  topic: string;
+  partition: number;
+  sourceBrokerId: number;
+  targetBrokerId: number;
+  currentReplicas: number[];
+  proposedReplicas: number[];
+  leaderMove: boolean;
+  estimatedSizeBytes?: number;
+  reason: string;
+};
+
+export type RebalancePlan = {
+  clusterId: string;
+  generatedAt: string;
+  strategy: "disk-pressure";
+  executable: boolean;
+  executionBlockedReason?: string;
+  brokerPressure: Array<{
+    brokerId: number;
+    host?: string;
+    port?: number;
+    replicaCount: number;
+    leaderCount: number;
+    disk?: DiskTelemetry;
+  }>;
+  summary: {
+    movements: number;
+    partitionsEvaluated: number;
+    sourceBrokerIds: number[];
+    targetBrokerIds: number[];
+    maxUsedPercent?: number;
+    minUsedPercent?: number;
+    estimatedBytesMoved?: number;
+  };
+  movements: RebalanceMovement[];
+  reassignment: {
+    version: 1;
+    partitions: Array<{
+      topic: string;
+      partition: number;
+      replicas: number[];
+      log_dirs: string[];
+    }>;
+  };
+  kafkaJsRequest: Array<{
+    topic: string;
+    partitionAssignment: Array<{
+      partition: number;
+      replicas: number[];
+    }>;
+  }>;
+  warnings: string[];
 };
 
 export type ConsumerGroupSummary = {

@@ -1,6 +1,6 @@
 # Contributing
 
-Thanks for helping shape Brokara.
+Thanks for helping shape EventHelm.
 
 ## Development
 

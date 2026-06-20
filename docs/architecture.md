@@ -1,12 +1,13 @@
-# Brokara Architecture
+# EventHelm Architecture
 
-Brokara is intended to become an open-source Kafka operations cockpit, not just a Kafka UI.
+EventHelm is intended to become an open-source event-streaming operations cockpit, not just a Kafka UI.
 
 ## Product Goals
 
 - Health-first operations for Kafka clusters.
 - Broker-local collectors that push telemetry to the control plane.
 - Safe self-service for topics, messages, schemas, connectors, and eventually ACLs.
+- Disk-aware partition rebalance planning before brokers run out of log-dir capacity.
 - Advisor agents that continuously inspect UX, security, SRE, governance, and maintainership quality.
 - Auditability and approval workflows for risky changes.
 
@@ -44,6 +45,7 @@ Future collector responsibilities:
 
 - JMX metric scraping.
 - Disk, network, and broker host telemetry.
+- Per-log-dir and per-partition size telemetry for exact data-movement planning.
 - Broker config drift detection.
 - Local log signal extraction.
 - Optional Kafka Connect and Schema Registry probes.
@@ -62,6 +64,17 @@ Current agents:
 
 Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
 
+### Disk-Aware Rebalance
+
+EventHelm treats rebalancing as a plan-review-apply workflow:
+
+1. Broker-local collectors report disk capacity, free space, used space, and pressure bands from the mounted broker log directory.
+2. The API reads Kafka partition placement metadata and generates a reassignment plan that moves replicas away from disk-pressured brokers.
+3. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
+4. Execution stays locked by default until production auth, approvals, and RBAC are configured.
+
+The first planner uses replica placement plus broker disk pressure. It does not yet know each partition's exact byte size because KafkaJS does not expose `DescribeLogDirs`; the collector roadmap includes log-dir or JMX probes to close that gap.
+
 ## Deployment Shape
 
 ```mermaid
@@ -78,10 +91,10 @@ flowchart LR
     C3 --> B3
   end
 
-  C1 --> API["Brokara API"]
+  C1 --> API["EventHelm API"]
   C2 --> API
   C3 --> API
-  API --> UI["Brokara Console"]
+  API --> UI["EventHelm Console"]
   API --> KAFKA["Kafka Admin API"]
   API --> AGENTS["Advisor Agents"]
 ```
@@ -92,5 +105,6 @@ flowchart LR
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add lag and offset operations with dry-run/approval workflows.
-5. Add GitOps import/export for topics and connector configs.
-6. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.
+5. Add exact partition-size telemetry and throttled reassignment execution.
+6. Add GitOps import/export for topics and connector configs.
+7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.
