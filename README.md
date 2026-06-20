@@ -30,6 +30,8 @@ Then open:
 - API health: http://localhost:18080/health
 - Postgres: `localhost:15432`
 
+The API and console containers include Docker Compose healthchecks, so `docker compose ps api web` reports readiness after the lab finishes booting.
+
 The Docker lab exposes Kafka brokers only on localhost:
 
 - `localhost:19092`
