@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { FastifyRequest } from "fastify";
-import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
+import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertSeparatedActor, assertWriteAllowed } from "./security.js";
 
 const managedEnvKeys = [
   "EVENTHELM_AUTH_MODE",
@@ -65,6 +65,37 @@ test("token mode ignores caller supplied actor headers", () => {
     },
     () => {
       assert.equal(actorFromRequest(requestWithToken("actor-token", false, "spoofed-operator")), "configured-operator");
+    }
+  );
+});
+
+test("token mode enforces separation of duties between workflow actors", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token"
+    },
+    () => {
+      const error = captureError(() =>
+        assertSeparatedActor("operator-a", [{ role: "requester", actor: "operator-a" }], "Cluster change approval")
+      );
+      assert.equal(error.statusCode, 403);
+      assert.match(error.message, /separation of duties/);
+      assert.doesNotThrow(() =>
+        assertSeparatedActor("operator-b", [{ role: "requester", actor: "operator-a" }], "Cluster change approval")
+      );
+    }
+  );
+});
+
+test("dev mode does not enforce separation of duties", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "dev"
+    },
+    () => {
+      assert.doesNotThrow(() =>
+        assertSeparatedActor("operator-a", [{ role: "requester", actor: "operator-a" }], "Cluster change approval")
+      );
     }
   );
 });

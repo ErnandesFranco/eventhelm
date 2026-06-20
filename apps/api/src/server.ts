@@ -59,7 +59,7 @@ import {
   releaseRebalancePlanExecution,
   saveRebalancePlan
 } from "./rebalancePlans.js";
-import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
+import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertSeparatedActor, assertWriteAllowed } from "./security.js";
 import type { ClusterConfig, RebalanceExecutionStatus, RebalancePlanRecord } from "./types.js";
 
 let clusters: ClusterRecord[] = [];
@@ -288,6 +288,7 @@ app.post("/api/clusters/reviews/:reviewId/approve", async (request) => {
     throw badRequest("Only pending cluster change reviews can be approved.");
   }
   const actor = actorFromRequest(request);
+  assertSeparatedActor(actor, [{ role: "requester", actor: review.actor }], "Cluster change approval");
   const approved = await markClusterChangeReview(review.id, "approved", actor, body.comment);
   await recordAudit({
     actor,
@@ -340,6 +341,14 @@ app.post("/api/clusters/reviews/:reviewId/apply", async (request) => {
   }
 
   const actor = actorFromRequest(request);
+  assertSeparatedActor(
+    actor,
+    [
+      { role: "requester", actor: review.actor },
+      { role: "reviewer", actor: review.reviewedBy }
+    ],
+    "Cluster change apply"
+  );
   if (review.request.action === "upsert") {
     const saved = await upsertClusterConfig(review.request.cluster, "api");
     clusters = await listClusterConfigs();
@@ -767,6 +776,7 @@ app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (requ
   }
 
   const actor = actorFromRequest(request);
+  assertSeparatedActor(actor, [{ role: "planner", actor: storedPlan.actor }], "Rebalance approval");
   const reviewed = await markRebalancePlanReviewed(storedPlan.id, "approved", actor, body.comment);
   await recordAudit({
     actor,
@@ -850,6 +860,14 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   }
 
   const actor = actorFromRequest(request);
+  assertSeparatedActor(
+    actor,
+    [
+      { role: "planner", actor: storedPlan.actor },
+      { role: "reviewer", actor: storedPlan.reviewedBy }
+    ],
+    "Rebalance execution"
+  );
   const executingPlan = await markRebalancePlanExecutionStarted(storedPlan.id, actor);
   if (!executingPlan) {
     throw badRequest("Another rebalance plan is already executing for this cluster, or this plan is no longer approved.");

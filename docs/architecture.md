@@ -30,7 +30,7 @@ The API owns:
 - Versioned database migrations with checksum validation in `schema_migrations`.
 - Later: OIDC/JWT identity, policy checks, approval workflows.
 
-Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. In token mode, audit actors and write-rate principals are derived from the authenticated token rather than caller-supplied actor headers. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
+Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. In token mode, audit actors and write-rate principals are derived from the authenticated token rather than caller-supplied actor headers, and review/apply workflows enforce separation of duties across requester or planner, reviewer, and execution actors. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
 
 Mutating API routes pass through a shared write guard that checks scope, optional write confirmation, and an optional in-memory per-actor/per-scope rate limit. Distributed rate limits and per-user quotas still belong in the future identity/control-plane layer.
 
@@ -85,7 +85,7 @@ Manual sweeps are stored as `agent_runs` records with durable run IDs, actors, t
 
 ### Cluster Registry
 
-Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. The console uses `cluster_change_reviews` as a request-review-apply queue for cluster registrations, updates, and removals. Direct API writes are break-glass only: they require `EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=true` plus `cluster:breakglass` or `admin` scope. Review records preserve sanitized current/proposed cluster metadata, warnings, actor decisions, and applied timestamps without exposing SASL passwords or secret reference names. Apply rejects stale reviews when the live sanitized registry state no longer matches the state captured at review creation. SASL credentials can use an inline password for local dev, but token auth mode rejects inline SASL passwords and requires `passwordEnv` for an API-process environment variable reference; production deployments still need a full external secret manager and RBAC before multi-team use.
+Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. The console uses `cluster_change_reviews` as a request-review-apply queue for cluster registrations, updates, and removals. Direct API writes are break-glass only: they require `EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=true` plus `cluster:breakglass` or `admin` scope. Review records preserve sanitized current/proposed cluster metadata, warnings, actor decisions, and applied timestamps without exposing SASL passwords or secret reference names. Apply rejects stale reviews when the live sanitized registry state no longer matches the state captured at review creation, and token mode requires distinct requester, reviewer, and apply actors. SASL credentials can use an inline password for local dev, but token auth mode rejects inline SASL passwords and requires `passwordEnv` for an API-process environment variable reference; production deployments still need a full external secret manager and RBAC before multi-team use.
 
 ### Disk-Aware Rebalance
 
@@ -100,7 +100,7 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 7. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
 8. The console and API expose Kafka's active partition reassignment status.
 9. Operators can run a preflight against a stored plan. The preflight checks the execution switch, approval state, executable plan shape, movement byte-estimate coverage, active Kafka reassignments, reviewed placement drift, under-replicated or offline planned partitions, collector disk coverage, collector freshness, and planner warnings.
-10. Execution accepts only approved stored plan IDs, claims a single in-flight `executing` plan per cluster, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
+10. Execution accepts only approved stored plan IDs, requires distinct planner, reviewer, and executor actors in token mode, claims a single in-flight `executing` plan per cluster, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
 11. EventHelm marks an executing plan `executed` only after Kafka reports no active reassignment and live replica placement matches the proposed assignments.
 12. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
 

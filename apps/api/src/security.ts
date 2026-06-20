@@ -101,6 +101,21 @@ export function assertWriteAllowed(request: FastifyRequest, scope: AuthScope = "
   assertWriteRateLimit(request, scope);
 }
 
+export function assertSeparatedActor(
+  actor: string,
+  blockedActors: Array<{ role: string; actor?: string }>,
+  action: string
+) {
+  if (getSecurityStatus().authMode !== "token") {
+    return;
+  }
+
+  const conflict = blockedActors.find((candidate) => candidate.actor && candidate.actor === actor);
+  if (conflict) {
+    throw forbidden(`${action} requires separation of duties; ${conflict.role} '${actor}' cannot perform this step.`);
+  }
+}
+
 function assertWriteRateLimit(request: FastifyRequest, scope: AuthScope) {
   const limit = getWriteRateLimitPerMinute();
   if (limit <= 0) {
