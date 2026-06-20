@@ -929,14 +929,14 @@ app.get("/api/clusters/:clusterId/agents/runs/:runId", async (request) => {
 
 app.get("/api/clusters/:clusterId/agents", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);
-  return buildAgentRun(params.clusterId, "system", "automatic");
+  return buildAgentRunPayload(params.clusterId, "system", "automatic");
 });
 
 app.post("/api/clusters/:clusterId/agents/run", async (request) => {
   assertWriteAllowed(request, "agent:run");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const actor = actorFromRequest(request);
-  const run = await buildAgentRun(params.clusterId, actor, "manual");
+  const run = await saveAgentRun(await buildAgentRunPayload(params.clusterId, actor, "manual"), actor, "manual");
   await recordAudit({
     actor,
     action: "agents.run",
@@ -948,7 +948,7 @@ app.post("/api/clusters/:clusterId/agents/run", async (request) => {
   return run;
 });
 
-async function buildAgentRun(clusterId: string, actor: string, trigger: "automatic" | "manual") {
+async function buildAgentRunPayload(clusterId: string, actor: string, trigger: "automatic" | "manual") {
   const cluster = getCluster(clusterId);
   const [description, topics, consumerGroups] = await Promise.all([
     describeCluster(cluster),
@@ -956,25 +956,21 @@ async function buildAgentRun(clusterId: string, actor: string, trigger: "automat
     listConsumerGroups(cluster)
   ]);
 
-  return saveAgentRun(
-    runAdvisorAgents(
-      {
-        clusterId,
-        brokerCount: description.brokers.length,
-        topics,
-        consumerGroups,
-        collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
-        auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
-        clusters: clusters.map(toPublicCluster),
-        clusterChangeReviews: (await listClusterChangeReviews(100)).filter((review) => review.clusterId === clusterId),
-        rebalancePlans: await listRebalancePlans(clusterId, 100),
-        security: getSecurityStatus(),
-        persistenceMode: persistenceMode()
-      },
-      { actor, trigger }
-    ),
-    actor,
-    trigger
+  return runAdvisorAgents(
+    {
+      clusterId,
+      brokerCount: description.brokers.length,
+      topics,
+      consumerGroups,
+      collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
+      auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
+      clusters: clusters.map(toPublicCluster),
+      clusterChangeReviews: (await listClusterChangeReviews(100)).filter((review) => review.clusterId === clusterId),
+      rebalancePlans: await listRebalancePlans(clusterId, 100),
+      security: getSecurityStatus(),
+      persistenceMode: persistenceMode()
+    },
+    { actor, trigger }
   );
 }
 
