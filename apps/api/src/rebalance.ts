@@ -60,7 +60,8 @@ export function buildDiskRebalancePlan({
       .filter((broker) => hasFreshDiskTelemetry(broker, now, collectorMaxAgeMs))
       .map((broker) => broker.brokerId)
   );
-  const partitionSizes = buildPartitionSizeIndex(collectors);
+  const partitionSizeIndex = buildPartitionSizeIndex(collectors, now, collectorMaxAgeMs);
+  const partitionSizes = partitionSizeIndex.sizes;
   const eligiblePlacements = placements.filter((placement) => input.includeInternal || !placement.isInternal);
   const sizedPlacements = eligiblePlacements.filter((placement) => partitionSizes.has(partitionKey(placement.topic, placement.partition)));
   const requestedTargetIds = input.targetBrokerIds ?? [];
@@ -72,6 +73,12 @@ export function buildDiskRebalancePlan({
   if (staleDiskBrokerIds.length > 0) {
     warnings.add(
       `Disk telemetry is stale or invalid for broker${staleDiskBrokerIds.length === 1 ? "" : "s"} ${staleDiskBrokerIds.join(", ")}.`
+    );
+  }
+
+  if (partitionSizeIndex.staleBrokerIds.length > 0) {
+    warnings.add(
+      `Partition byte telemetry is stale or invalid for broker${partitionSizeIndex.staleBrokerIds.length === 1 ? "" : "s"} ${partitionSizeIndex.staleBrokerIds.join(", ")}. Stale log-dir sizes were ignored.`
     );
   }
 
@@ -613,8 +620,7 @@ function hasFreshDiskTelemetry(broker: BrokerPressure, now: Date, collectorMaxAg
   if (!broker.disk || broker.disk.totalBytes <= 0) {
     return false;
   }
-  const sampledAtMs = Date.parse(broker.disk.sampledAt);
-  return Number.isFinite(sampledAtMs) && now.getTime() - sampledAtMs <= collectorMaxAgeMs;
+  return isFreshTimestamp(broker.disk.sampledAt, now, collectorMaxAgeMs);
 }
 
 function rebalanceReason(sourceBrokerId: number, targetBrokerId: number, pressure: BrokerPressure[], estimatedSizeBytes?: number) {
@@ -642,10 +648,22 @@ function groupAssignments(movements: RebalanceMovement[]) {
   return grouped;
 }
 
-function buildPartitionSizeIndex(collectors: CollectorState[]) {
+function buildPartitionSizeIndex(collectors: CollectorState[], now: Date, collectorMaxAgeMs: number) {
   const sizes = new Map<string, number>();
+  const staleBrokerIds = new Set<number>();
   for (const collector of collectors) {
-    for (const partition of collector.lastSnapshot?.partitions ?? []) {
+    const partitions = collector.lastSnapshot?.partitions ?? [];
+    if (partitions.length === 0) {
+      continue;
+    }
+    if (!collector.lastSnapshot || !isFreshTimestamp(collector.lastSnapshot.observedAt, now, collectorMaxAgeMs)) {
+      const brokerId = Number(collector.heartbeat.brokerId);
+      if (Number.isFinite(brokerId)) {
+        staleBrokerIds.add(brokerId);
+      }
+      continue;
+    }
+    for (const partition of partitions) {
       const key = partitionKey(partition.topic, partition.partition);
       const current = sizes.get(key);
       if (current === undefined || partition.sizeBytes > current) {
@@ -653,7 +671,12 @@ function buildPartitionSizeIndex(collectors: CollectorState[]) {
       }
     }
   }
-  return sizes;
+  return { sizes, staleBrokerIds: [...staleBrokerIds].sort((left, right) => left - right) };
+}
+
+function isFreshTimestamp(timestamp: string, now: Date, collectorMaxAgeMs: number) {
+  const timestampMs = Date.parse(timestamp);
+  return Number.isFinite(timestampMs) && now.getTime() - timestampMs <= collectorMaxAgeMs;
 }
 
 function partitionSize(sizes: Map<string, number>, placement: PartitionPlacement) {
