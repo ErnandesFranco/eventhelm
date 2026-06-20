@@ -115,13 +115,14 @@ EventHelm includes a disk-pressure rebalance planner:
 - `POST /api/clusters/:clusterId/rebalance/plan` generates a Kafka reassignment payload.
 - `GET /api/clusters/:clusterId/rebalance/plans` lists retained plan summaries.
 - `GET /api/clusters/:clusterId/rebalance/plans/:planId` returns the full stored plan for review or reload.
+- `GET /api/clusters/:clusterId/rebalance/plans/:planId/preflight` checks the approved plan against live Kafka state and collector freshness.
 - `GET /api/clusters/:clusterId/rebalance/status` reports active Kafka partition reassignments.
 - `POST /api/clusters/:clusterId/rebalance/plans/:planId/approve` and `/reject` record a reviewed decision.
 - Generated plans are persisted with a plan ID before operators can apply them.
 - The planner preserves replication factor, skips under-replicated partitions, prefers follower replica moves before leader moves, and scores targets by projected disk usage.
 - Execution requires an approved stored plan.
 - Execution is rejected while Kafka reports an active partition reassignment.
-- Execution reloads the stored plan and rejects stale plans when current replica placement no longer matches the reviewed assignments.
+- Execution runs the same preflight gate and rejects stale plans, missing or stale broker disk telemetry, inactive execution switches, and current replica placement drift before calling Kafka.
 - Execution is locked unless `EVENTHELM_ENABLE_REBALANCE_EXECUTION=true` is set.
 
 ## Audit
@@ -150,7 +151,7 @@ Current protections:
 - Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
 - Partition reassignment execution is locked by default with `EVENTHELM_ENABLE_REBALANCE_EXECUTION=false`.
-- Rebalance execution also requires a reviewed approval decision on the stored plan.
+- Rebalance execution also requires a reviewed approval decision and passing live preflight on the stored plan.
 
 Still required before shared or production use:
 

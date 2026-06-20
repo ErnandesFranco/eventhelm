@@ -425,6 +425,27 @@ export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
   warnings: string[];
 };
 
+export type RebalancePreflightCheck = {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type RebalancePreflight = {
+  planId: string;
+  clusterId: string;
+  checkedAt: string;
+  executable: boolean;
+  blockedReasons: string[];
+  warnings: string[];
+  staleMovementCount: number;
+  missingTelemetryBrokerIds: number[];
+  staleTelemetryBrokerIds: number[];
+  checks: RebalancePreflightCheck[];
+};
+
 export type RebalancePartitionReassignment = {
   topic: string;
   partition: number;
@@ -627,6 +648,8 @@ export const api = {
     request<RebalanceExecutionStatus>(`/api/clusters/${clusterId}/rebalance/status`),
   rebalancePlan: (clusterId: string, planId: string) =>
     request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}`),
+  rebalancePreflight: (clusterId: string, planId: string) =>
+    request<RebalancePreflight>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}/preflight`),
   approveRebalancePlan: (clusterId: string, planId: string, comment?: string) =>
     request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}/approve`, {
       method: "POST",

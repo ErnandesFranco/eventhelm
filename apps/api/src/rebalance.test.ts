@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDiskRebalancePlan } from "./rebalance.js";
-import type { CollectorState, DiskTelemetry, PartitionPlacement } from "./types.js";
+import { buildDiskRebalancePlan, buildRebalancePreflight } from "./rebalance.js";
+import type { CollectorState, DiskTelemetry, PartitionPlacement, RebalanceExecutionStatus, RebalancePlan, RebalancePlanRecord } from "./types.js";
 
 const brokers = [
   { nodeId: 1, host: "kafka-1", port: 9092 },
@@ -76,6 +76,122 @@ test("buildDiskRebalancePlan warns when partition byte telemetry is missing", ()
   assert.equal(plan.summary.estimatedBytesMoved, undefined);
   assert.ok(plan.warnings.some((warning) => warning.includes("Partition byte telemetry is missing")));
 });
+
+test("buildRebalancePreflight passes an approved current plan with fresh collector telemetry", () => {
+  const plan = planFixture();
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements,
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(preflight.executable, true);
+  assert.equal(preflight.blockedReasons.length, 0);
+  assert.equal(preflight.checks.every((check) => check.status !== "fail"), true);
+});
+
+test("buildRebalancePreflight fails when reviewed replica placement is stale", () => {
+  const plan = planFixture();
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: [
+      placement("orders.created", 0, 2, [1, 2, 3]),
+      placement("orders.created", 1, 2, [2, 1, 3]),
+      placement("orders.created", 2, 1, [1, 2, 3])
+    ],
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(preflight.executable, false);
+  assert.equal(preflight.staleMovementCount, 1);
+  assert.equal(preflight.checks.find((check) => check.id === "placement-current")?.status, "fail");
+});
+
+test("buildRebalancePreflight fails when planned brokers lack disk telemetry", () => {
+  const plan = planFixture();
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements,
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(preflight.executable, false);
+  assert.deepEqual(preflight.missingTelemetryBrokerIds, [4]);
+  assert.equal(preflight.checks.find((check) => check.id === "collector-coverage")?.status, "fail");
+});
+
+function planFixture(): RebalancePlan {
+  return buildDiskRebalancePlan({
+    clusterId: "local",
+    brokers,
+    collectors: [
+      collector(1, 90, [
+        ["orders.created", 0, 50_000],
+        ["orders.created", 1, 100_000]
+      ]),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    placements,
+    input: {
+      maxMovements: 1,
+      includeInternal: false,
+      sourceBrokerId: 1,
+      targetBrokerIds: [4],
+      highWatermarkPercent: 95,
+      minBrokerGapPercent: 5,
+      executionEnabled: true
+    }
+  });
+}
+
+function planRecord(plan: RebalancePlan, status: RebalancePlanRecord["status"]): RebalancePlanRecord {
+  return {
+    id: plan.id,
+    clusterId: plan.clusterId,
+    actor: "test",
+    status,
+    createdAt: plan.generatedAt,
+    reviewedBy: status === "approved" ? "reviewer" : undefined,
+    reviewedAt: status === "approved" ? new Date().toISOString() : undefined,
+    plan
+  };
+}
+
+function inactiveReassignmentStatus(): RebalanceExecutionStatus {
+  return {
+    clusterId: "local",
+    checkedAt: new Date().toISOString(),
+    active: false,
+    activeTopicCount: 0,
+    activePartitionCount: 0,
+    reassignments: []
+  };
+}
 
 function placement(topic: string, partition: number, leader: number, replicas: number[]): PartitionPlacement {
   return {

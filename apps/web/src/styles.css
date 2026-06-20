@@ -1381,6 +1381,10 @@ label {
   grid-template-columns: minmax(260px, 1.4fr) minmax(160px, 1fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr);
 }
 
+.preflightTable .tableRow {
+  grid-template-columns: minmax(230px, 1fr) 120px minmax(320px, 1.6fr);
+}
+
 .rebalanceHistoryTable small {
   display: block;
   color: var(--muted);
@@ -1496,6 +1500,28 @@ label {
   box-shadow: inset 0 0 0 1px rgba(182, 111, 0, 0.08);
 }
 
+.rebalancePreflightSurface.ready {
+  border-color: rgba(34, 197, 94, 0.28);
+}
+
+.rebalancePreflightSurface.blocked {
+  border-color: rgba(245, 158, 11, 0.28);
+}
+
+.rebalancePreflightSummary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 14px;
+  flex-wrap: wrap;
+}
+
+.rebalancePreflightSummary > span:not(.statusPill) {
+  color: var(--muted);
+  font-size: 0.86rem;
+}
+
 .rebalanceExecutionSummary {
   display: grid;
   grid-template-columns: auto 130px 130px auto;
@@ -1516,7 +1542,8 @@ label {
 }
 
 .rebalanceExecutionSummary small,
-.reassignmentStatusTable small {
+.reassignmentStatusTable small,
+.preflightTable small {
   display: block;
   color: var(--muted);
   margin-top: 3px;

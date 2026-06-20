@@ -219,6 +219,27 @@ export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
   warnings: string[];
 };
 
+export type RebalancePreflightCheck = {
+  id: string;
+  label: string;
+  status: "pass" | "warn" | "fail";
+  detail: string;
+  evidence?: Record<string, unknown>;
+};
+
+export type RebalancePreflight = {
+  planId: string;
+  clusterId: string;
+  checkedAt: string;
+  executable: boolean;
+  blockedReasons: string[];
+  warnings: string[];
+  staleMovementCount: number;
+  missingTelemetryBrokerIds: number[];
+  staleTelemetryBrokerIds: number[];
+  checks: RebalancePreflightCheck[];
+};
+
 export type RebalancePartitionReassignment = {
   topic: string;
   partition: number;

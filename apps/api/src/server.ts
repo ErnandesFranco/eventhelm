@@ -45,7 +45,7 @@ import {
   previewTopicConfigUpdate,
   produceMessage
 } from "./kafka.js";
-import { buildDiskRebalancePlan } from "./rebalance.js";
+import { buildDiskRebalancePlan, buildRebalancePreflight } from "./rebalance.js";
 import {
   getRebalancePlan,
   listRebalancePlans,
@@ -54,7 +54,7 @@ import {
   saveRebalancePlan
 } from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
-import type { PartitionPlacement, RebalancePlan } from "./types.js";
+import type { RebalancePlanRecord } from "./types.js";
 
 let clusters: ClusterRecord[] = [];
 const app = Fastify({
@@ -96,22 +96,20 @@ function forbidden(message: string) {
   return error;
 }
 
-function assertRebalancePlanCurrent(plan: RebalancePlan, placements: PartitionPlacement[]) {
-  const placementByKey = new Map(placements.map((placement) => [`${placement.topic}\u0000${placement.partition}`, placement]));
-  const staleMovements = plan.movements.filter((movement) => {
-    const placement = placementByKey.get(`${movement.topic}\u0000${movement.partition}`);
-    return !placement || !sameReplicas(placement.replicas, movement.currentReplicas);
+async function buildStoredRebalancePreflight(clusterId: string, storedPlan: RebalancePlanRecord) {
+  const cluster = getCluster(clusterId);
+  const [reassignmentStatus, currentPlacements, collectors] = await Promise.all([
+    describePartitionReassignments(cluster),
+    listPartitionPlacements(cluster, true),
+    listCollectors()
+  ]);
+  return buildRebalancePreflight({
+    planRecord: storedPlan,
+    executionEnabled: isRebalanceExecutionEnabled(),
+    reassignmentStatus,
+    currentPlacements,
+    collectors: collectors.filter((collector) => collector.heartbeat.clusterId === clusterId)
   });
-
-  if (staleMovements.length > 0) {
-    throw badRequest(
-      `Rebalance plan is stale. ${staleMovements.length} planned partitions no longer match their reviewed replica assignments.`
-    );
-  }
-}
-
-function sameReplicas(left: number[], right: number[]) {
-  return left.length === right.length && left.every((replica, index) => replica === right[index]);
 }
 
 const offsetResetRequestSchema = z
@@ -617,6 +615,15 @@ app.get("/api/clusters/:clusterId/rebalance/plans/:planId", async (request) => {
   return storedPlan;
 });
 
+app.get("/api/clusters/:clusterId/rebalance/plans/:planId/preflight", async (request) => {
+  const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
+  const storedPlan = await getRebalancePlan(params.planId);
+  if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
+    throw badRequest("Rebalance plan was not found for this cluster.");
+  }
+  return buildStoredRebalancePreflight(params.clusterId, storedPlan);
+});
+
 app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
   assertWriteAllowed(request, "rebalance:plan");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
@@ -760,21 +767,12 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   if (storedPlan.status !== "approved") {
     throw badRequest("Rebalance plan must be approved before execution.");
   }
-  if (!storedPlan.plan.executable || storedPlan.plan.movements.length === 0) {
-    throw badRequest("Rebalance plan is not executable. Regenerate a plan after enabling execution.");
-  }
 
   const cluster = getCluster(params.clusterId);
-  const reassignmentStatus = await describePartitionReassignments(cluster);
-  if (reassignmentStatus.active) {
-    throw badRequest(
-      `Kafka already has ${reassignmentStatus.activePartitionCount} active partition reassignment${
-        reassignmentStatus.activePartitionCount === 1 ? "" : "s"
-      }. Wait for the current movement to finish before executing another plan.`
-    );
+  const preflight = await buildStoredRebalancePreflight(params.clusterId, storedPlan);
+  if (!preflight.executable) {
+    throw badRequest(`Rebalance preflight failed. ${preflight.blockedReasons.join(" ")}`);
   }
-  const currentPlacements = await listPartitionPlacements(cluster, true);
-  assertRebalancePlanCurrent(storedPlan.plan, currentPlacements);
 
   await alterPartitionAssignments(cluster, storedPlan.plan.kafkaJsRequest);
   await markRebalancePlanExecuted(storedPlan.id);

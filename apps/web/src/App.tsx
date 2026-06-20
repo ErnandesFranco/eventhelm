@@ -52,6 +52,7 @@ import type {
   Overview,
   RebalanceExecutionStatus,
   RebalancePlan,
+  RebalancePreflight,
   RebalancePlanSummaryRecord,
   SecurityStatus,
   Topic,
@@ -699,10 +700,12 @@ function RebalanceView({
   const [sourceBrokerId, setSourceBrokerId] = useState("auto");
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>([]);
   const [plan, setPlan] = useState<RebalancePlan | null>(null);
+  const [preflight, setPreflight] = useState<RebalancePreflight | null>(null);
   const [planHistory, setPlanHistory] = useState<RebalancePlanSummaryRecord[]>([]);
   const [executionStatus, setExecutionStatus] = useState<RebalanceExecutionStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [preflightBusy, setPreflightBusy] = useState(false);
   const [statusBusy, setStatusBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -730,6 +733,23 @@ function RebalanceView({
     }
   }, [clusterId]);
 
+  const refreshPreflight = useCallback(
+    async (planId: string) => {
+      setPreflightBusy(true);
+      try {
+        const nextPreflight = await api.rebalancePreflight(clusterId, planId);
+        setPreflight(nextPreflight);
+        return nextPreflight;
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : String(caught));
+        return null;
+      } finally {
+        setPreflightBusy(false);
+      }
+    },
+    [clusterId]
+  );
+
   useEffect(() => {
     void refreshPlanHistory();
     void refreshExecutionStatus();
@@ -737,6 +757,7 @@ function RebalanceView({
 
   function resetPlan() {
     setPlan(null);
+    setPreflight(null);
     setCopied(false);
   }
 
@@ -760,6 +781,7 @@ function RebalanceView({
         targetBrokerIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined
       });
       setPlan(nextPlan);
+      await refreshPreflight(nextPlan.id);
       await refreshPlanHistory();
       await refreshExecutionStatus();
       await onAuditChanged();
@@ -777,6 +799,12 @@ function RebalanceView({
     setBusy(true);
     setError(null);
     try {
+      const nextPreflight = await refreshPreflight(plan.id);
+      if (!nextPreflight?.executable) {
+        setError(nextPreflight ? `Rebalance preflight blocked execution: ${nextPreflight.blockedReasons.join(" ")}` : "Rebalance preflight failed.");
+        setBusy(false);
+        return;
+      }
       await api.executeRebalance(clusterId, plan.id);
       await refreshExecutionStatus();
       await refreshPlanHistory();
@@ -803,6 +831,7 @@ function RebalanceView({
     try {
       const stored = await api.rebalancePlan(clusterId, planId);
       setPlan(stored.plan);
+      await refreshPreflight(stored.plan.id);
       setCopied(false);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -822,6 +851,9 @@ function RebalanceView({
       }
       await refreshPlanHistory();
       await refreshExecutionStatus();
+      if (plan?.id === planId) {
+        await refreshPreflight(planId);
+      }
       await onAuditChanged();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -995,6 +1027,12 @@ function RebalanceView({
             </section>
           ) : null}
 
+          <RebalancePreflightPanel
+            busy={preflightBusy}
+            onRefresh={() => void refreshPreflight(plan.id)}
+            preflight={preflight?.planId === plan.id ? preflight : null}
+          />
+
           <section className="surface">
             <SurfaceHeader icon={ArrowRightLeft} title="Planned Movements" meta={`${plan.movements.length} moves`} />
             <DataTable className="movementTable">
@@ -1038,11 +1076,19 @@ function RebalanceView({
               <button
                 className="primaryButton"
                 type="button"
-                disabled={!plan.executable || busy || Boolean(executionStatus?.active)}
+                disabled={!plan.executable || !preflight?.executable || busy || preflightBusy || Boolean(executionStatus?.active)}
                 onClick={() => void executePlan()}
               >
                 <ArrowRightLeft size={17} />
-                {executionStatus?.active ? "Reassignment active" : plan.executable ? "Apply reassignment" : "Execution locked"}
+                {executionStatus?.active
+                  ? "Reassignment active"
+                  : !plan.executable
+                    ? "Execution locked"
+                    : preflightBusy
+                      ? "Checking preflight"
+                      : preflight?.executable
+                        ? "Apply reassignment"
+                        : "Preflight blocked"}
               </button>
             </footer>
           </section>
@@ -1064,6 +1110,61 @@ function RebalanceView({
         />
       </section>
     </div>
+  );
+}
+
+function RebalancePreflightPanel({
+  busy,
+  onRefresh,
+  preflight
+}: {
+  busy: boolean;
+  onRefresh: () => void;
+  preflight: RebalancePreflight | null;
+}) {
+  const failedChecks = preflight?.checks.filter((check) => check.status === "fail").length ?? 0;
+  const warningChecks = preflight?.checks.filter((check) => check.status === "warn").length ?? 0;
+  return (
+    <section className={`surface rebalancePreflightSurface ${preflight?.executable ? "ready" : "blocked"}`}>
+      <SurfaceHeader
+        icon={ShieldCheck}
+        title="Execution Preflight"
+        meta={busy ? "checking" : preflight?.executable ? "clear" : preflight ? "blocked" : "not checked"}
+      />
+      <div className="rebalancePreflightSummary">
+        <StatusPill tone={preflight?.executable ? "good" : "bad"} icon={preflight?.executable ? ShieldCheck : ShieldAlert}>
+          {preflight?.executable ? "Ready to execute" : "Blocked"}
+        </StatusPill>
+        <span>{preflight ? `${failedChecks} failed / ${warningChecks} warnings` : "Run checks against live Kafka state"}</span>
+        <button className="secondaryButton compactButton" type="button" disabled={busy} onClick={onRefresh}>
+          <RefreshCw size={15} />
+          {busy ? "Checking" : "Run preflight"}
+        </button>
+      </div>
+      {preflight ? (
+        <DataTable className="preflightTable">
+          <div className="tableRow tableHead">
+            <span>Check</span>
+            <span>Status</span>
+            <span>Evidence</span>
+          </div>
+          {preflight.checks.map((check) => (
+            <div className="tableRow" key={check.id}>
+              <span>
+                <strong>{check.label}</strong>
+                <small className="mono">{check.id}</small>
+              </span>
+              <StatusPill tone={preflightStatusTone(check.status)} icon={check.status === "pass" ? CheckCircle2 : AlertTriangle}>
+                {check.status}
+              </StatusPill>
+              <span>{check.detail}</span>
+            </div>
+          ))}
+        </DataTable>
+      ) : (
+        <EmptyState title="Run preflight before execution" />
+      )}
+    </section>
   );
 }
 
@@ -2916,6 +3017,16 @@ function rebalanceStatusTone(status: RebalancePlanSummaryRecord["status"]): "goo
     return "bad";
   }
   return "warning";
+}
+
+function preflightStatusTone(status: RebalancePreflight["checks"][number]["status"]): "good" | "warning" | "bad" | "neutral" {
+  if (status === "pass") {
+    return "good";
+  }
+  if (status === "warn") {
+    return "warning";
+  }
+  return "bad";
 }
 
 function clusterReviewTone(status: ClusterChangeReview["status"]): "good" | "warning" | "bad" | "neutral" {

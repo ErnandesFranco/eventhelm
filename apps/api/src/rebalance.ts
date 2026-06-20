@@ -1,5 +1,16 @@
 import { nanoid } from "nanoid";
-import type { CollectorState, PartitionPlacement, RebalanceMovement, RebalancePlan } from "./types.js";
+import type {
+  CollectorState,
+  PartitionPlacement,
+  RebalanceExecutionStatus,
+  RebalanceMovement,
+  RebalancePlan,
+  RebalancePlanRecord,
+  RebalancePreflight,
+  RebalancePreflightCheck
+} from "./types.js";
+
+export const REBALANCE_COLLECTOR_MAX_AGE_MS = 5 * 60 * 1000;
 
 export type RebalancePlanInput = {
   maxMovements: number;
@@ -178,6 +189,171 @@ export function buildDiskRebalancePlan({
   };
 }
 
+export function buildRebalancePreflight({
+  planRecord,
+  executionEnabled,
+  reassignmentStatus,
+  currentPlacements,
+  collectors,
+  now = new Date(),
+  collectorMaxAgeMs = REBALANCE_COLLECTOR_MAX_AGE_MS
+}: {
+  planRecord: RebalancePlanRecord;
+  executionEnabled: boolean;
+  reassignmentStatus: RebalanceExecutionStatus;
+  currentPlacements: PartitionPlacement[];
+  collectors: CollectorState[];
+  now?: Date;
+  collectorMaxAgeMs?: number;
+}): RebalancePreflight {
+  const plan = planRecord.plan;
+  const staleMovements = staleRebalanceMovements(plan, currentPlacements);
+  const plannedBrokerIds = plannedMovementBrokerIds(plan);
+  const collectorByBroker = collectorsByBrokerId(collectors);
+  const missingTelemetryBrokerIds = plannedBrokerIds.filter((brokerId) => !collectorByBroker.get(brokerId)?.lastSnapshot?.disk);
+  const staleTelemetryBrokerIds = plannedBrokerIds.filter((brokerId) => {
+    const sampledAt = collectorByBroker.get(brokerId)?.lastSnapshot?.disk?.sampledAt;
+    if (!sampledAt) {
+      return false;
+    }
+    const sampledAtMs = Date.parse(sampledAt);
+    return !Number.isFinite(sampledAtMs) || now.getTime() - sampledAtMs > collectorMaxAgeMs;
+  });
+  const checks: RebalancePreflightCheck[] = [
+    {
+      id: "execution-enabled",
+      label: "Execution switch",
+      status: executionEnabled ? "pass" : "fail",
+      detail: executionEnabled
+        ? "EVENTHELM_ENABLE_REBALANCE_EXECUTION is enabled for this API process."
+        : "Execution is disabled. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true only after deployment RBAC and runbooks are ready."
+    },
+    {
+      id: "plan-status",
+      label: "Review decision",
+      status: planRecord.status === "approved" ? "pass" : "fail",
+      detail:
+        planRecord.status === "approved"
+          ? `Plan was approved by ${planRecord.reviewedBy ?? "an operator"}.`
+          : `Plan status is ${planRecord.status}; approve the stored plan before execution.`,
+      evidence: {
+        reviewedBy: planRecord.reviewedBy,
+        reviewedAt: planRecord.reviewedAt
+      }
+    },
+    {
+      id: "plan-movements",
+      label: "Plan shape",
+      status: plan.movements.length > 0 ? "pass" : "fail",
+      detail:
+        plan.movements.length > 0
+          ? `${plan.movements.length} partition movement${plan.movements.length === 1 ? "" : "s"} ready for Kafka reassignment.`
+          : "Plan has no partition movements; regenerate it before execution.",
+      evidence: {
+        movements: plan.movements.length,
+        generatedAt: plan.generatedAt
+      }
+    },
+    {
+      id: "generated-executable",
+      label: "Generated execution flag",
+      status: plan.executable ? "pass" : "fail",
+      detail: plan.executable
+        ? "The stored plan was generated while execution was available."
+        : plan.executionBlockedReason ?? "Stored plan is not executable; regenerate it before execution.",
+      evidence: {
+        executable: plan.executable
+      }
+    },
+    {
+      id: "active-reassignment",
+      label: "Kafka reassignment activity",
+      status: reassignmentStatus.active ? "fail" : "pass",
+      detail: reassignmentStatus.active
+        ? `Kafka reports ${reassignmentStatus.activePartitionCount} active partition reassignment${
+            reassignmentStatus.activePartitionCount === 1 ? "" : "s"
+          }.`
+        : "Kafka reports no active partition reassignments.",
+      evidence: {
+        activeTopicCount: reassignmentStatus.activeTopicCount,
+        activePartitionCount: reassignmentStatus.activePartitionCount
+      }
+    },
+    {
+      id: "placement-current",
+      label: "Reviewed placement still current",
+      status: staleMovements.length > 0 ? "fail" : "pass",
+      detail:
+        staleMovements.length > 0
+          ? `${staleMovements.length} planned partition${staleMovements.length === 1 ? "" : "s"} no longer match the reviewed replica assignments.`
+          : "Current Kafka replica placement still matches the reviewed plan.",
+      evidence: {
+        staleMovements: staleMovements.slice(0, 5).map((movement) => `${movement.topic}:${movement.partition}`)
+      }
+    },
+    {
+      id: "collector-coverage",
+      label: "Collector disk coverage",
+      status: missingTelemetryBrokerIds.length > 0 ? "fail" : "pass",
+      detail:
+        missingTelemetryBrokerIds.length > 0
+          ? `Missing broker-local disk telemetry for broker${missingTelemetryBrokerIds.length === 1 ? "" : "s"} ${missingTelemetryBrokerIds.join(", ")}.`
+          : plannedBrokerIds.length > 0
+            ? "Every source and target broker has collector disk telemetry."
+            : "Plan has no movement brokers that require collector disk telemetry.",
+      evidence: {
+        brokerIds: plannedBrokerIds,
+        missingTelemetryBrokerIds
+      }
+    },
+    {
+      id: "collector-freshness",
+      label: "Collector freshness",
+      status: staleTelemetryBrokerIds.length > 0 ? "fail" : "pass",
+      detail:
+        staleTelemetryBrokerIds.length > 0
+          ? `Disk telemetry is stale for broker${staleTelemetryBrokerIds.length === 1 ? "" : "s"} ${staleTelemetryBrokerIds.join(", ")}.`
+          : "Collector disk samples for planned movement brokers are fresh.",
+      evidence: {
+        maxAgeSeconds: Math.round(collectorMaxAgeMs / 1000),
+        staleTelemetryBrokerIds
+      }
+    },
+    {
+      id: "planner-warnings",
+      label: "Planner warnings",
+      status: plan.warnings.length > 0 ? "warn" : "pass",
+      detail: plan.warnings.length > 0 ? plan.warnings.join(" ") : "Planner returned no warnings.",
+      evidence: {
+        warningCount: plan.warnings.length
+      }
+    }
+  ];
+  const failedChecks = checks.filter((check) => check.status === "fail");
+  const warningChecks = checks.filter((check) => check.status === "warn");
+
+  return {
+    planId: plan.id,
+    clusterId: plan.clusterId,
+    checkedAt: now.toISOString(),
+    executable: failedChecks.length === 0,
+    blockedReasons: failedChecks.map((check) => check.detail),
+    warnings: warningChecks.map((check) => check.detail),
+    staleMovementCount: staleMovements.length,
+    missingTelemetryBrokerIds,
+    staleTelemetryBrokerIds,
+    checks
+  };
+}
+
+export function staleRebalanceMovements(plan: RebalancePlan, placements: PartitionPlacement[]): RebalanceMovement[] {
+  const placementByKey = new Map(placements.map((placement) => [partitionKey(placement.topic, placement.partition), placement]));
+  return plan.movements.filter((movement) => {
+    const placement = placementByKey.get(partitionKey(movement.topic, movement.partition));
+    return !placement || !sameReplicas(placement.replicas, movement.currentReplicas);
+  });
+}
+
 function buildBrokerPressure(brokers: Broker[], collectors: CollectorState[], placements: PartitionPlacement[]): BrokerPressure[] {
   const collectorEntries: Array<[number, CollectorState]> = [];
   for (const collector of collectors) {
@@ -328,8 +504,27 @@ function partitionSize(sizes: Map<string, number>, placement: PartitionPlacement
   return sizes.get(partitionKey(placement.topic, placement.partition));
 }
 
+function plannedMovementBrokerIds(plan: RebalancePlan) {
+  return [...new Set(plan.movements.flatMap((movement) => [movement.sourceBrokerId, movement.targetBrokerId]))].sort((left, right) => left - right);
+}
+
+function collectorsByBrokerId(collectors: CollectorState[]) {
+  const byBrokerId = new Map<number, CollectorState>();
+  for (const collector of collectors) {
+    const brokerId = Number(collector.heartbeat.brokerId);
+    if (Number.isFinite(brokerId)) {
+      byBrokerId.set(brokerId, collector);
+    }
+  }
+  return byBrokerId;
+}
+
 function partitionKey(topic: string, partition: number) {
   return `${topic}\u0000${partition}`;
+}
+
+function sameReplicas(left: number[], right: number[]) {
+  return left.length === right.length && left.every((replica, index) => replica === right[index]);
 }
 
 function formatBytes(value: number) {
