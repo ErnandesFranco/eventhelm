@@ -736,6 +736,7 @@ function RebalanceView({
   const [preflight, setPreflight] = useState<RebalancePreflight | null>(null);
   const [planHistory, setPlanHistory] = useState<RebalancePlanSummaryRecord[]>([]);
   const [executionStatus, setExecutionStatus] = useState<RebalanceExecutionStatus | null>(null);
+  const [reviewDraft, setReviewDraft] = useState<{ planId: string; decision: "approved" | "rejected" } | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
   const [preflightBusy, setPreflightBusy] = useState(false);
@@ -878,15 +879,16 @@ function RebalanceView({
     }
   }
 
-  async function reviewStoredPlan(planId: string, decision: "approved" | "rejected") {
+  async function reviewStoredPlan(planId: string, decision: "approved" | "rejected", comment: string) {
     setHistoryBusy(true);
     setError(null);
     try {
       if (decision === "approved") {
-        await api.approveRebalancePlan(clusterId, planId);
+        await api.approveRebalancePlan(clusterId, planId, comment);
       } else {
-        await api.rejectRebalancePlan(clusterId, planId);
+        await api.rejectRebalancePlan(clusterId, planId, comment);
       }
+      setReviewDraft(null);
       await refreshPlanHistory();
       await refreshExecutionStatus();
       if (plan?.id === planId) {
@@ -1152,11 +1154,83 @@ function RebalanceView({
         <RebalancePlanHistory
           history={planHistory}
           activePlanId={plan?.id}
-          onApprove={(planId) => void reviewStoredPlan(planId, "approved")}
+          onApprove={(planId) => setReviewDraft({ planId, decision: "approved" })}
           onLoad={(planId) => void loadStoredPlan(planId)}
-          onReject={(planId) => void reviewStoredPlan(planId, "rejected")}
+          onReject={(planId) => setReviewDraft({ planId, decision: "rejected" })}
         />
       </section>
+      {reviewDraft ? (
+        <RebalanceReviewModal
+          busy={historyBusy}
+          decision={reviewDraft.decision}
+          onClose={() => setReviewDraft(null)}
+          onSubmit={(comment) => void reviewStoredPlan(reviewDraft.planId, reviewDraft.decision, comment)}
+          planId={reviewDraft.planId}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+function RebalanceReviewModal({
+  busy,
+  decision,
+  onClose,
+  onSubmit,
+  planId
+}: {
+  busy: boolean;
+  decision: "approved" | "rejected";
+  onClose: () => void;
+  onSubmit: (comment: string) => void;
+  planId: string;
+}) {
+  const [comment, setComment] = useState("");
+  const trimmedComment = comment.trim();
+  const title = decision === "approved" ? "Approve rebalance plan" : "Reject rebalance plan";
+
+  function submit(event: FormEvent) {
+    event.preventDefault();
+    if (trimmedComment.length === 0) {
+      return;
+    }
+    onSubmit(trimmedComment);
+  }
+
+  return (
+    <div className="modalScrim">
+      <form className="modalSurface" onSubmit={submit}>
+        <header>
+          <div>
+            <h2>{title}</h2>
+            <p className="mono">{planId}</p>
+          </div>
+          <button className="iconButton" type="button" onClick={onClose} title="Close" disabled={busy}>
+            <X size={18} />
+          </button>
+        </header>
+        <label>
+          Review comment
+          <textarea
+            maxLength={500}
+            minLength={1}
+            onChange={(event) => setComment(event.target.value)}
+            placeholder={decision === "approved" ? "Approved for the next maintenance window." : "Rejected until telemetry coverage is complete."}
+            required
+            value={comment}
+          />
+        </label>
+        <footer>
+          <button className="secondaryButton" type="button" onClick={onClose} disabled={busy}>
+            <X size={17} />
+            Cancel
+          </button>
+          <button className="primaryButton" type="submit" disabled={busy || trimmedComment.length === 0}>
+            {decision === "approved" ? <ShieldCheck size={17} /> : <X size={17} />}
+            {busy ? "Recording" : decision === "approved" ? "Approve" : "Reject"}
+          </button>
+        </footer>
+      </form>
     </div>
   );
 }
