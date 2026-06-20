@@ -6,6 +6,7 @@ export const authScopes = [
   "write",
   "admin",
   "cluster:write",
+  "cluster:breakglass",
   "topic:write",
   "message:write",
   "consumer:write",
@@ -149,6 +150,10 @@ export function getCorsOrigin(): string | string[] | true {
 
 export function isRebalanceExecutionEnabled(): boolean {
   return env("EVENTHELM_ENABLE_REBALANCE_EXECUTION", "BROKARA_ENABLE_REBALANCE_EXECUTION") === "true";
+}
+
+export function isClusterBreakglassEnabled(): boolean {
+  return env("EVENTHELM_ENABLE_CLUSTER_BREAKGLASS", "BROKARA_ENABLE_CLUSTER_BREAKGLASS") === "true";
 }
 
 export function getDatabaseUrl(): string | undefined {

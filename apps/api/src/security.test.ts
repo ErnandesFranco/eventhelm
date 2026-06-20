@@ -32,6 +32,28 @@ test("scoped API tokens enforce write scope boundaries", () => {
   );
 });
 
+test("cluster breakglass scope is not granted by generic write", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token",
+      EVENTHELM_REQUIRE_WRITE_CONFIRMATION: "true",
+      EVENTHELM_API_TOKENS_JSON: JSON.stringify([
+        { token: "write-token", actor: "writer", scopes: ["read", "write"] },
+        { token: "breakglass-token", actor: "breakglass", scopes: ["read", "cluster:breakglass"] }
+      ])
+    },
+    () => {
+      const genericWrite = requestWithToken("write-token", true);
+      const breakglass = requestWithToken("breakglass-token", true);
+
+      assert.doesNotThrow(() => assertWriteAllowed(genericWrite, "cluster:write"));
+      const error = captureError(() => assertWriteAllowed(genericWrite, "cluster:breakglass"));
+      assert.equal(error.statusCode, 403);
+      assert.doesNotThrow(() => assertWriteAllowed(breakglass, "cluster:breakglass"));
+    }
+  );
+});
+
 test("read auth requires read scope in token mode", () => {
   withEnv(
     {

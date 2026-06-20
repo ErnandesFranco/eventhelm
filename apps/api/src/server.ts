@@ -25,6 +25,7 @@ import {
   getCorsOrigin,
   getPort,
   getSecurityStatus,
+  isClusterBreakglassEnabled,
   isRebalanceExecutionEnabled,
   loadClusters
 } from "./config.js";
@@ -95,6 +96,13 @@ function forbidden(message: string) {
   const error = new Error(message);
   (error as Error & { statusCode: number }).statusCode = 403;
   return error;
+}
+
+function assertClusterBreakglassAllowed(request: Parameters<typeof assertWriteAllowed>[0]) {
+  if (!isClusterBreakglassEnabled()) {
+    throw forbidden("Direct cluster registry mutation is disabled. Use cluster change reviews or enable EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=true.");
+  }
+  assertWriteAllowed(request, "cluster:breakglass");
 }
 
 async function buildStoredRebalancePreflight(clusterId: string, storedPlan: RebalancePlanRecord) {
@@ -324,7 +332,7 @@ app.post("/api/clusters/reviews/:reviewId/apply", async (request) => {
 });
 
 app.post("/api/clusters", async (request) => {
-  assertWriteAllowed(request, "cluster:write");
+  assertClusterBreakglassAllowed(request);
   const body = clusterSchema
     .extend({
       id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "Cluster IDs must be lowercase alphanumeric slugs.")
@@ -347,7 +355,7 @@ app.post("/api/clusters", async (request) => {
 });
 
 app.delete("/api/clusters/:clusterId", async (request) => {
-  assertWriteAllowed(request, "cluster:write");
+  assertClusterBreakglassAllowed(request);
   const params = z.object({ clusterId: z.string().min(1) }).parse(request.params);
   const existing = clusters.find((cluster) => cluster.id === params.clusterId);
   if (!existing) {

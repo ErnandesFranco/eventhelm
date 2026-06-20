@@ -68,8 +68,7 @@ Every sweep returns a durable run ID, severity summary, per-agent scores, and fi
 EventHelm bootstraps clusters from `EVENTHELM_CLUSTERS_JSON` and stores them in Postgres when persistence is enabled:
 
 - `GET /api/clusters` returns safe cluster metadata, including brokers, source, and whether SASL is configured.
-- `POST /api/clusters` registers or updates a cluster and requires write confirmation headers.
-- `DELETE /api/clusters/:clusterId` removes API-managed clusters; environment-managed clusters are protected.
+- `POST /api/clusters` and `DELETE /api/clusters/:clusterId` are break-glass direct mutation routes. They require `EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=true` and `cluster:breakglass` or `admin` scope.
 - `GET /api/clusters/reviews` lists retained cluster change reviews.
 - `POST /api/clusters/reviews` creates an upsert or delete review with sanitized current/proposed metadata.
 - `POST /api/clusters/reviews/:reviewId/approve`, `/reject`, and `/apply` move a reviewed cluster change through decision and execution.
@@ -143,7 +142,7 @@ Current protections:
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
-- The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
+- The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `cluster:breakglass`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
 - In token mode, read auth is required by default unless `EVENTHELM_REQUIRE_READ_AUTH=false` is set.
 - Mutating endpoints support per-actor/per-scope write rate limits with `EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE`.
 - Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
@@ -151,6 +150,7 @@ Current protections:
 - Mutating requests support explicit confirmation headers.
 - Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
+- Direct cluster registry mutations are locked by default with `EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=false`; use the cluster change review queue for normal operations.
 - Partition reassignment execution is locked by default with `EVENTHELM_ENABLE_REBALANCE_EXECUTION=false`.
 - Rebalance execution also requires a reviewed approval decision and passing live preflight on the stored plan.
 

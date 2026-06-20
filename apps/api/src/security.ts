@@ -45,7 +45,8 @@ function tokenConfigFromRequest(request: FastifyRequest): ApiTokenConfig | undef
 }
 
 function hasScope(config: ApiTokenConfig, scope: AuthScope) {
-  return config.scopes.includes("admin") || config.scopes.includes(scope) || (scope !== "read" && config.scopes.includes("write"));
+  const writeScopeAllowed = scope !== "read" && scope !== "cluster:breakglass" && config.scopes.includes("write");
+  return config.scopes.includes("admin") || config.scopes.includes(scope) || writeScopeAllowed;
 }
 
 function requireToken(request: FastifyRequest): ApiTokenConfig {

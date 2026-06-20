@@ -341,6 +341,7 @@ export type AuthScope =
   | "write"
   | "admin"
   | "cluster:write"
+  | "cluster:breakglass"
   | "topic:write"
   | "message:write"
   | "consumer:write"
