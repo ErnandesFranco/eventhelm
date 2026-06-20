@@ -208,6 +208,7 @@ export function buildRebalancePreflight({
 }): RebalancePreflight {
   const plan = planRecord.plan;
   const staleMovements = staleRebalanceMovements(plan, currentPlacements);
+  const unknownSizeMovements = plan.movements.filter((movement) => movement.estimatedSizeBytes === undefined);
   const plannedBrokerIds = plannedMovementBrokerIds(plan);
   const collectorByBroker = collectorsByBrokerId(collectors);
   const missingTelemetryBrokerIds = plannedBrokerIds.filter((brokerId) => !collectorByBroker.get(brokerId)?.lastSnapshot?.disk);
@@ -292,6 +293,18 @@ export function buildRebalancePreflight({
       }
     },
     {
+      id: "movement-size-coverage",
+      label: "Movement size coverage",
+      status: unknownSizeMovements.length > 0 ? "fail" : "pass",
+      detail:
+        unknownSizeMovements.length > 0
+          ? `${unknownSizeMovements.length} planned movement${unknownSizeMovements.length === 1 ? "" : "s"} lack broker-local byte estimates.`
+          : "Every planned movement has a broker-local byte estimate.",
+      evidence: {
+        unknownSizeMovements: unknownSizeMovements.slice(0, 5).map((movement) => `${movement.topic}:${movement.partition}`)
+      }
+    },
+    {
       id: "collector-coverage",
       label: "Collector disk coverage",
       status: missingTelemetryBrokerIds.length > 0 ? "fail" : "pass",
@@ -340,6 +353,7 @@ export function buildRebalancePreflight({
     blockedReasons: failedChecks.map((check) => check.detail),
     warnings: warningChecks.map((check) => check.detail),
     staleMovementCount: staleMovements.length,
+    unknownSizeMovementCount: unknownSizeMovements.length,
     missingTelemetryBrokerIds,
     staleTelemetryBrokerIds,
     checks

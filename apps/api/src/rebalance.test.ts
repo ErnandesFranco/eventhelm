@@ -143,6 +143,42 @@ test("buildRebalancePreflight fails when planned brokers lack disk telemetry", (
   assert.equal(preflight.checks.find((check) => check.id === "collector-coverage")?.status, "fail");
 });
 
+test("buildRebalancePreflight fails when planned movements lack byte estimates", () => {
+  const plan = buildDiskRebalancePlan({
+    clusterId: "local",
+    brokers,
+    collectors: [collector(1, 90), collector(2, 42), collector(3, 40), collector(4, 10)],
+    placements,
+    input: {
+      maxMovements: 1,
+      includeInternal: false,
+      sourceBrokerId: 1,
+      targetBrokerIds: [4],
+      highWatermarkPercent: 95,
+      minBrokerGapPercent: 5,
+      executionEnabled: true
+    }
+  });
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements,
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(plan.movements[0]?.estimatedSizeBytes, undefined);
+  assert.equal(preflight.executable, false);
+  assert.equal(preflight.unknownSizeMovementCount, 1);
+  assert.equal(preflight.checks.find((check) => check.id === "movement-size-coverage")?.status, "fail");
+});
+
 function planFixture(): RebalancePlan {
   return buildDiskRebalancePlan({
     clusterId: "local",

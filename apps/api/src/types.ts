@@ -235,6 +235,7 @@ export type RebalancePreflight = {
   blockedReasons: string[];
   warnings: string[];
   staleMovementCount: number;
+  unknownSizeMovementCount: number;
   missingTelemetryBrokerIds: number[];
   staleTelemetryBrokerIds: number[];
   checks: RebalancePreflightCheck[];
