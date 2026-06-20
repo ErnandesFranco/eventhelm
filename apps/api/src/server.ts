@@ -29,6 +29,7 @@ import {
   createTopic,
   describeConsumerGroupLag,
   describeCluster,
+  describePartitionReassignments,
   describeTopicConfig,
   executeConsumerGroupOffsetReset,
   listConsumerGroups,
@@ -500,6 +501,11 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
   return plan;
 });
 
+app.get("/api/clusters/:clusterId/rebalance/status", async (request) => {
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  return describePartitionReassignments(getCluster(params.clusterId));
+});
+
 app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (request) => {
   assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
@@ -594,6 +600,14 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   }
 
   const cluster = getCluster(params.clusterId);
+  const reassignmentStatus = await describePartitionReassignments(cluster);
+  if (reassignmentStatus.active) {
+    throw badRequest(
+      `Kafka already has ${reassignmentStatus.activePartitionCount} active partition reassignment${
+        reassignmentStatus.activePartitionCount === 1 ? "" : "s"
+      }. Wait for the current movement to finish before executing another plan.`
+    );
+  }
   const currentPlacements = await listPartitionPlacements(cluster, true);
   assertRebalancePlanCurrent(storedPlan.plan, currentPlacements);
 

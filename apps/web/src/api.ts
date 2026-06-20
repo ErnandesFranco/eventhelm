@@ -380,6 +380,23 @@ export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
   warnings: string[];
 };
 
+export type RebalancePartitionReassignment = {
+  topic: string;
+  partition: number;
+  replicas: number[];
+  addingReplicas: number[];
+  removingReplicas: number[];
+};
+
+export type RebalanceExecutionStatus = {
+  clusterId: string;
+  checkedAt: string;
+  active: boolean;
+  activeTopicCount: number;
+  activePartitionCount: number;
+  reassignments: RebalancePartitionReassignment[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:18080";
 const apiToken = import.meta.env.VITE_EVENTHELM_API_TOKEN ?? import.meta.env.VITE_BROKARA_API_TOKEN;
 const actor = import.meta.env.VITE_EVENTHELM_ACTOR ?? import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
@@ -520,6 +537,8 @@ export const api = {
     }),
   rebalancePlans: (clusterId: string, limit = 12) =>
     request<RebalancePlanSummaryRecord[]>(`/api/clusters/${clusterId}/rebalance/plans?limit=${limit}`),
+  rebalanceStatus: (clusterId: string) =>
+    request<RebalanceExecutionStatus>(`/api/clusters/${clusterId}/rebalance/status`),
   rebalancePlan: (clusterId: string, planId: string) =>
     request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}`),
   approveRebalancePlan: (clusterId: string, planId: string, comment?: string) =>

@@ -218,6 +218,23 @@ export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
   warnings: string[];
 };
 
+export type RebalancePartitionReassignment = {
+  topic: string;
+  partition: number;
+  replicas: number[];
+  addingReplicas: number[];
+  removingReplicas: number[];
+};
+
+export type RebalanceExecutionStatus = {
+  clusterId: string;
+  checkedAt: string;
+  active: boolean;
+  activeTopicCount: number;
+  activePartitionCount: number;
+  reassignments: RebalancePartitionReassignment[];
+};
+
 export type ConsumerGroupSummary = {
   groupId: string;
   protocolType: string;

@@ -8,6 +8,7 @@ import type {
   ConsumerOffsetResetPreview,
   ConsumerOffsetResetRequest,
   PartitionPlacement,
+  RebalanceExecutionStatus,
   RebalancePlan,
   TopicConfig,
   TopicConfigUpdatePreview,
@@ -16,6 +17,15 @@ import type {
 } from "./types.js";
 
 type KafkaAdmin = ReturnType<ReturnType<typeof createKafka>["admin"]>;
+type KafkaPartitionReassignmentTopic = {
+  topic: string;
+  partitions: Array<{
+    partitionIndex: number;
+    replicas: number[];
+    addingReplicas?: number[];
+    removingReplicas?: number[];
+  }>;
+};
 const topicConfigResourceType = 2;
 type GroupDescription = {
   groupId: string;
@@ -215,6 +225,45 @@ export async function alterPartitionAssignments(cluster: ClusterConfig, topics: 
   } finally {
     await admin.disconnect();
   }
+}
+
+export async function describePartitionReassignments(cluster: ClusterConfig): Promise<RebalanceExecutionStatus> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const response = await admin.listPartitionReassignments({ timeout: 10_000 });
+    return toRebalanceExecutionStatus(cluster.id, response.topics);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export function toRebalanceExecutionStatus(
+  clusterId: string,
+  topics: KafkaPartitionReassignmentTopic[],
+  checkedAt = new Date().toISOString()
+): RebalanceExecutionStatus {
+  const reassignments = topics
+    .flatMap((topic) =>
+      topic.partitions.map((partition) => ({
+        topic: topic.topic,
+        partition: partition.partitionIndex,
+        replicas: partition.replicas,
+        addingReplicas: partition.addingReplicas ?? [],
+        removingReplicas: partition.removingReplicas ?? []
+      }))
+    )
+    .filter((partition) => partition.addingReplicas.length > 0 || partition.removingReplicas.length > 0)
+    .sort((left, right) => left.topic.localeCompare(right.topic) || left.partition - right.partition);
+
+  return {
+    clusterId,
+    checkedAt,
+    active: reassignments.length > 0,
+    activeTopicCount: new Set(reassignments.map((partition) => partition.topic)).size,
+    activePartitionCount: reassignments.length,
+    reassignments
+  };
 }
 
 export async function createTopic(

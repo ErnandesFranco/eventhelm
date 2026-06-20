@@ -111,10 +111,12 @@ EventHelm includes a disk-pressure rebalance planner:
 - `POST /api/clusters/:clusterId/rebalance/plan` generates a Kafka reassignment payload.
 - `GET /api/clusters/:clusterId/rebalance/plans` lists retained plan summaries.
 - `GET /api/clusters/:clusterId/rebalance/plans/:planId` returns the full stored plan for review or reload.
+- `GET /api/clusters/:clusterId/rebalance/status` reports active Kafka partition reassignments.
 - `POST /api/clusters/:clusterId/rebalance/plans/:planId/approve` and `/reject` record a reviewed decision.
 - Generated plans are persisted with a plan ID before operators can apply them.
 - The planner preserves replication factor, skips under-replicated partitions, prefers follower replica moves before leader moves, and scores targets by projected disk usage.
 - Execution requires an approved stored plan.
+- Execution is rejected while Kafka reports an active partition reassignment.
 - Execution reloads the stored plan and rejects stale plans when current replica placement no longer matches the reviewed assignments.
 - Execution is locked unless `EVENTHELM_ENABLE_REBALANCE_EXECUTION=true` is set.
 

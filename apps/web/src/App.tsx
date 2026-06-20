@@ -49,6 +49,7 @@ import type {
   ConsumerOffsetResetPreview,
   MessageRecord,
   Overview,
+  RebalanceExecutionStatus,
   RebalancePlan,
   RebalancePlanSummaryRecord,
   SecurityStatus,
@@ -694,8 +695,10 @@ function RebalanceView({
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>([]);
   const [plan, setPlan] = useState<RebalancePlan | null>(null);
   const [planHistory, setPlanHistory] = useState<RebalancePlanSummaryRecord[]>([]);
+  const [executionStatus, setExecutionStatus] = useState<RebalanceExecutionStatus | null>(null);
   const [busy, setBusy] = useState(false);
   const [historyBusy, setHistoryBusy] = useState(false);
+  const [statusBusy, setStatusBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const brokerIds = overview.brokers.map((broker) => broker.nodeId).sort((left, right) => left - right);
@@ -711,9 +714,21 @@ function RebalanceView({
     }
   }, [clusterId]);
 
+  const refreshExecutionStatus = useCallback(async () => {
+    setStatusBusy(true);
+    try {
+      setExecutionStatus(await api.rebalanceStatus(clusterId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setStatusBusy(false);
+    }
+  }, [clusterId]);
+
   useEffect(() => {
     void refreshPlanHistory();
-  }, [refreshPlanHistory]);
+    void refreshExecutionStatus();
+  }, [refreshExecutionStatus, refreshPlanHistory]);
 
   function resetPlan() {
     setPlan(null);
@@ -741,6 +756,7 @@ function RebalanceView({
       });
       setPlan(nextPlan);
       await refreshPlanHistory();
+      await refreshExecutionStatus();
       await onAuditChanged();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -757,6 +773,7 @@ function RebalanceView({
     setError(null);
     try {
       await api.executeRebalance(clusterId, plan.id);
+      await refreshExecutionStatus();
       await refreshPlanHistory();
       await onAuditChanged();
       await generatePlan();
@@ -799,6 +816,7 @@ function RebalanceView({
         await api.rejectRebalancePlan(clusterId, planId);
       }
       await refreshPlanHistory();
+      await refreshExecutionStatus();
       await onAuditChanged();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -824,6 +842,8 @@ function RebalanceView({
       </div>
 
       {error ? <div className="notice error">{error}</div> : null}
+
+      <RebalanceExecutionStatusPanel status={executionStatus} busy={statusBusy} onRefresh={() => void refreshExecutionStatus()} />
 
       <section className="surface rebalanceControls">
         <SurfaceHeader icon={HardDrive} title="Planning Controls" meta="dry-run first" />
@@ -953,7 +973,12 @@ function RebalanceView({
             <Metric icon={HardDrive} label="Min disk" value={formatPercent(plan.summary.minUsedPercent)} detail="lowest broker usage" />
             <Metric icon={Database} label="Data moved" value={formatBytes(plan.summary.estimatedBytesMoved)} detail="estimated log bytes" />
             <Metric icon={Database} label="Partitions" value={plan.summary.partitionsEvaluated} detail="evaluated for placement" />
-            <Metric icon={ShieldCheck} label="Execution" value={plan.executable ? "Ready" : "Locked"} detail={plan.executable ? "backend accepts apply" : "requires opt-in"} />
+            <Metric
+              icon={ShieldCheck}
+              label="Execution"
+              value={executionStatus?.active ? "Active" : plan.executable ? "Ready" : "Locked"}
+              detail={executionStatus?.active ? "Kafka movement running" : plan.executable ? "backend accepts apply" : "requires opt-in"}
+            />
           </section>
 
           {plan.warnings.length > 0 || plan.executionBlockedReason ? (
@@ -1005,9 +1030,14 @@ function RebalanceView({
                 <ClipboardCopy size={17} />
                 {copied ? "Copied" : "Copy JSON"}
               </button>
-              <button className="primaryButton" type="button" disabled={!plan.executable || busy} onClick={() => void executePlan()}>
+              <button
+                className="primaryButton"
+                type="button"
+                disabled={!plan.executable || busy || Boolean(executionStatus?.active)}
+                onClick={() => void executePlan()}
+              >
                 <ArrowRightLeft size={17} />
-                {plan.executable ? "Apply reassignment" : "Execution locked"}
+                {executionStatus?.active ? "Reassignment active" : plan.executable ? "Apply reassignment" : "Execution locked"}
               </button>
             </footer>
           </section>
@@ -1029,6 +1059,63 @@ function RebalanceView({
         />
       </section>
     </div>
+  );
+}
+
+function RebalanceExecutionStatusPanel({
+  status,
+  busy,
+  onRefresh
+}: {
+  status: RebalanceExecutionStatus | null;
+  busy: boolean;
+  onRefresh: () => void;
+}) {
+  const active = Boolean(status?.active);
+
+  return (
+    <section className={`surface rebalanceExecutionSurface ${active ? "active" : ""}`}>
+      <SurfaceHeader icon={Activity} title="Execution Status" meta={busy ? "checking" : status ? formatDateTime(status.checkedAt) : "not checked"} />
+      <div className="rebalanceExecutionSummary">
+        <StatusPill tone={active ? "warning" : "good"} icon={active ? Activity : CheckCircle2}>
+          {active ? "Active reassignment" : "No active reassignment"}
+        </StatusPill>
+        <span>
+          <strong>{status?.activePartitionCount ?? 0}</strong>
+          <small>partitions moving</small>
+        </span>
+        <span>
+          <strong>{status?.activeTopicCount ?? 0}</strong>
+          <small>topics touched</small>
+        </span>
+        <button className="secondaryButton compactButton" type="button" disabled={busy} onClick={onRefresh}>
+          <RefreshCw size={15} />
+          Refresh
+        </button>
+      </div>
+
+      {status?.active ? (
+        <DataTable className="reassignmentStatusTable">
+          <div className="tableRow tableHead">
+            <span>Partition</span>
+            <span>Replicas</span>
+            <span>Adding</span>
+            <span>Removing</span>
+          </div>
+          {status.reassignments.map((assignment) => (
+            <div className="tableRow" key={`${assignment.topic}-${assignment.partition}`}>
+              <span>
+                <strong className="mono">{assignment.topic}</strong>
+                <small>partition {assignment.partition}</small>
+              </span>
+              <span className="mono">[{assignment.replicas.join(",")}]</span>
+              <span className="mono">[{assignment.addingReplicas.join(",") || "none"}]</span>
+              <span className="mono">[{assignment.removingReplicas.join(",") || "none"}]</span>
+            </div>
+          ))}
+        </DataTable>
+      ) : null}
+    </section>
   );
 }
 

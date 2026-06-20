@@ -94,8 +94,9 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 5. The API persists the generated plan and returns a plan ID.
 6. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
 7. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
-8. Execution accepts only approved stored plan IDs, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
-9. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
+8. The console and API expose Kafka's active partition reassignment status.
+9. Execution accepts only approved stored plan IDs, refuses overlapping active reassignments, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
+10. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
 
 ### Consumer Offset Reset
 
