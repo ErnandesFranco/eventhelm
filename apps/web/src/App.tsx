@@ -32,7 +32,7 @@ import {
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
-import type { ReactNode } from "react";
+import type { CSSProperties, ReactNode } from "react";
 import type {
   AdvisorAgent,
   AgentFinding,
@@ -331,14 +331,51 @@ function CommandCenter({
 function TopologyPanel({ overview }: { overview: Overview }) {
   const collectorByBroker = new Map(overview.collectors.map((collector) => [collector.heartbeat.brokerId, collector]));
   const density = overview.brokers.length > 8 ? "dense" : overview.brokers.length > 4 ? "compact" : "standard";
-  const onlineCollectors = overview.collectors.filter((collector) => collectorFreshness(collector) === "online").length;
+  const brokerCards = [...overview.brokers]
+    .sort((left, right) => left.nodeId - right.nodeId)
+    .map((broker) => {
+      const collector = collectorByBroker.get(String(broker.nodeId));
+      const freshness = collector ? collectorFreshness(collector) : "missing";
+      return {
+        broker,
+        collector,
+        disk: collector?.lastSnapshot?.disk,
+        freshness,
+        isController: overview.controllerId === broker.nodeId
+      };
+    });
+  const onlineCollectors = brokerCards.filter((card) => card.freshness === "online").length;
+  const diskValues = brokerCards
+    .map((card) => card.disk?.usedPercent)
+    .filter((value): value is number => value !== undefined);
+  const averageDisk = diskValues.length ? diskValues.reduce((total, value) => total + value, 0) / diskValues.length : undefined;
+  const hottestBroker = brokerCards
+    .filter((card) => card.disk)
+    .sort((left, right) => (right.disk?.usedPercent ?? 0) - (left.disk?.usedPercent ?? 0))[0];
+  const laneCount = overview.brokers.length > 14 ? 4 : overview.brokers.length > 6 ? 3 : overview.brokers.length > 3 ? 2 : 1;
+  const brokerLanes = Array.from({ length: laneCount }, (_, laneIndex) =>
+    brokerCards.filter((_, brokerIndex) => brokerIndex % laneCount === laneIndex)
+  );
+  const collectorTone = onlineCollectors === overview.brokers.length ? "good" : onlineCollectors === 0 ? "bad" : "warning";
+  const storageTone = pressureTone(hottestBroker?.disk?.pressure);
+  const laneStyle = { "--topology-lanes": brokerLanes.length } as CSSProperties;
+
   return (
     <div className={`topologyMap ${density}`}>
       <div className="topologyHub">
-        <div className="hubMark">
-          <img src={eventhelmMark} alt="" />
+        <div className="hubTopline">
+          <div className="hubMark">
+            <img src={eventhelmMark} alt="" />
+          </div>
+          <span className="hubStatus">
+            <Activity size={13} />
+            live
+          </span>
         </div>
-        <strong>EventHelm API</strong>
+        <div>
+          <strong>EventHelm API</strong>
+          <p>{overview.kafkaClusterId ?? overview.clusterName}</p>
+        </div>
         <div className="hubStats">
           <span>
             <Server size={13} />
@@ -353,40 +390,108 @@ function TopologyPanel({ overview }: { overview: Overview }) {
             controller {overview.controllerId ?? "unknown"}
           </span>
         </div>
+        <div className="topologyMiniMap" aria-label="Broker status overview">
+          {brokerCards.map((card) => (
+            <span
+              className={`miniBroker ${card.freshness} ${card.isController ? "controller" : ""}`}
+              key={card.broker.nodeId}
+              title={`Broker ${card.broker.nodeId}: ${card.freshness}`}
+            />
+          ))}
+        </div>
       </div>
-      <div className={`brokerLane ${density}`}>
-        {overview.brokers.map((broker) => {
-          const collector = collectorByBroker.get(String(broker.nodeId));
-          const freshness = collector ? collectorFreshness(collector) : "missing";
-          const disk = collector?.lastSnapshot?.disk;
-          return (
-            <article className={`brokerNode ${freshness}`} key={broker.nodeId}>
-              <div className="brokerNodeHeader">
-                <span className="brokerIcon">
-                  <Server size={17} />
-                </span>
-                <div>
-                  <strong>Broker {broker.nodeId}</strong>
-                  <span className="mono">{broker.host}:{broker.port}</span>
-                </div>
-                {overview.controllerId === broker.nodeId ? <span className="nodeRole">controller</span> : null}
+
+      <div className="topologyBackplane">
+        <div className="topologyVitals">
+          <div className={`topologyVital ${collectorTone}`}>
+            <RadioTower size={15} />
+            <span>Collectors</span>
+            <strong>
+              {onlineCollectors}/{overview.brokers.length}
+            </strong>
+          </div>
+          <div className={`topologyVital ${storageTone}`}>
+            <HardDrive size={15} />
+            <span>Disk</span>
+            <strong>{averageDisk === undefined ? "n/a" : `${averageDisk.toFixed(1)}% avg`}</strong>
+          </div>
+          <div className="topologyVital neutral">
+            <Gauge size={15} />
+            <span>Hottest</span>
+            <strong>{hottestBroker ? `broker ${hottestBroker.broker.nodeId}` : "n/a"}</strong>
+          </div>
+          <div className="topologyVital neutral">
+            <Database size={15} />
+            <span>Topics</span>
+            <strong>{overview.topicCount}</strong>
+          </div>
+        </div>
+
+        <div className="topologyRail">
+          <span>
+            <Network size={14} />
+            Kafka fabric
+          </span>
+          <i />
+          <span>
+            <Layers3 size={14} />
+            {brokerLanes.length} lanes
+          </span>
+        </div>
+
+        <div className={`brokerFleet ${density}`} style={laneStyle}>
+          {brokerLanes.map((lane, laneIndex) => (
+            <section className="brokerBank" key={laneIndex}>
+              <div className="brokerBankHeader">
+                <span>Lane {String.fromCharCode(65 + laneIndex)}</span>
+                <small>{lane.length} brokers</small>
               </div>
-              <div className="brokerSignalGrid">
-                <span>
-                  <RadioTower size={13} />
-                  {collector ? `${freshness} ${formatAge(collector.heartbeat.observedAt)}` : "collector missing"}
-                </span>
-                <span>
-                  <HardDrive size={13} />
-                  {disk ? `${disk.usedPercent.toFixed(1)}% used` : "disk unknown"}
-                </span>
+              <div className={`brokerLane ${density}`}>
+                {lane.map((card) => (
+                  <article className={`brokerNode ${card.freshness} ${card.isController ? "controller" : ""}`} key={card.broker.nodeId}>
+                    <div className="brokerNodeHeader">
+                      <span className="brokerIcon">
+                        <Server size={17} />
+                      </span>
+                      <div>
+                        <strong>Broker {card.broker.nodeId}</strong>
+                        <span className="mono">
+                          {card.broker.host}:{card.broker.port}
+                        </span>
+                      </div>
+                      <span className={`nodeHealth ${card.freshness}`} title={`Collector ${card.freshness}`} />
+                    </div>
+                    {card.isController ? (
+                      <span className="nodeRole">
+                        <CircleDot size={11} />
+                        controller
+                      </span>
+                    ) : null}
+                    <div className="brokerSignalGrid">
+                      <span>
+                        <RadioTower size={13} />
+                        {card.collector ? `${card.freshness} ${formatAge(card.collector.heartbeat.observedAt)}` : "collector missing"}
+                      </span>
+                      <span>
+                        <HardDrive size={13} />
+                        {card.disk ? `${card.disk.usedPercent.toFixed(1)}% used` : "disk unknown"}
+                      </span>
+                    </div>
+                    <div className="brokerDiskFooter">
+                      <div className="brokerDiskMeter" aria-label={`Broker ${card.broker.nodeId} disk usage`}>
+                        <span
+                          className={card.disk?.pressure ?? "unknown"}
+                          style={{ width: `${Math.min(100, card.disk?.usedPercent ?? 0)}%` }}
+                        />
+                      </div>
+                      <span>{card.disk ? formatBytes(card.disk.usedBytes) : "n/a"}</span>
+                    </div>
+                  </article>
+                ))}
               </div>
-              <div className="brokerDiskMeter" aria-label={`Broker ${broker.nodeId} disk usage`}>
-                <span className={disk?.pressure ?? "unknown"} style={{ width: `${Math.min(100, disk?.usedPercent ?? 0)}%` }} />
-              </div>
-            </article>
-          );
-        })}
+            </section>
+          ))}
+        </div>
       </div>
     </div>
   );
