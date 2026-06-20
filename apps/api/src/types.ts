@@ -61,3 +61,46 @@ export type ConsumerGroupSummary = {
   state?: string;
   members?: number;
 };
+
+export type SecurityMode = "dev" | "token";
+
+export type SecurityStatus = {
+  authMode: SecurityMode;
+  apiTokenConfigured: boolean;
+  collectorTokenConfigured: boolean;
+  corsOrigin: string;
+  writeConfirmationRequired: boolean;
+};
+
+export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+export type AdvisorAgent = {
+  id: string;
+  name: string;
+  role: "ux" | "security" | "sre" | "governance" | "maintainer";
+  mission: string;
+  cadence: string;
+};
+
+export type AgentFinding = {
+  id: string;
+  agentId: string;
+  severity: AgentSeverity;
+  title: string;
+  summary: string;
+  recommendation: string;
+  resourceType?: string;
+  resourceName?: string;
+};
+
+export type AgentRun = {
+  clusterId: string;
+  generatedAt: string;
+  agents: Array<
+    AdvisorAgent & {
+      findings: AgentFinding[];
+      score: number;
+    }
+  >;
+  findings: AgentFinding[];
+};

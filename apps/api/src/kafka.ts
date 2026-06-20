@@ -3,7 +3,7 @@ import type { ClusterConfig, ConsumerGroupSummary, TopicSummary } from "./types.
 
 function createKafka(cluster: ClusterConfig): Kafka {
   return new Kafka({
-    clientId: "okcp-api",
+    clientId: "brokara-api",
     brokers: cluster.brokers,
     ssl: cluster.ssl,
     sasl: toKafkaSasl(cluster.sasl),
@@ -186,7 +186,7 @@ export async function browseMessages(
 ) {
   const kafka = createKafka(cluster);
   const consumer = kafka.consumer({
-    groupId: `okcp-browser-${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    groupId: `brokara-browser-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     allowAutoTopicCreation: false
   });
   const messages: Array<{

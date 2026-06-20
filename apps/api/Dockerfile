@@ -4,10 +4,12 @@ WORKDIR /app
 
 COPY package.json package-lock.json ./
 COPY apps/api/package.json apps/api/package.json
-RUN npm ci --workspace @okcp/api
+RUN npm ci --workspace @brokara/api
 
 COPY apps/api apps/api
-RUN npm run build --workspace @okcp/api
+RUN npm run build --workspace @brokara/api
 
 EXPOSE 8080
-CMD ["npm", "run", "start", "--workspace", "@okcp/api"]
+RUN chown -R node:node /app
+USER node
+CMD ["npm", "run", "start", "--workspace", "@brokara/api"]

@@ -1,14 +1,14 @@
-# Architecture
+# Brokara Architecture
 
-## Goals
+Brokara is intended to become an open-source Kafka operations cockpit, not just a Kafka UI.
 
-Open Kafka Control Plane is intended to be more than a message browser. The target is a practical operations platform for Kafka:
+## Product Goals
 
-- Safe self-service for developers.
-- Multi-cluster visibility for platform teams.
-- Broker-local collectors for health, inventory, and operational telemetry.
-- Auditability for every mutating action.
-- A future GitOps/policy layer for topics, ACLs, schemas, and connectors.
+- Health-first operations for Kafka clusters.
+- Broker-local collectors that push telemetry to the control plane.
+- Safe self-service for topics, messages, schemas, connectors, and eventually ACLs.
+- Advisor agents that continuously inspect UX, security, SRE, governance, and maintainership quality.
+- Auditability and approval workflows for risky changes.
 
 ## Components
 
@@ -19,16 +19,26 @@ The API owns:
 - Kafka AdminClient operations.
 - Message browsing and producing.
 - Collector registration and snapshots.
+- Advisor-agent checks.
+- Security posture reporting.
 - Audit events.
 - Later: persistence, RBAC, policy checks, approval workflows.
 
 ### Web Console
 
-The console is a work surface for operators. It starts with cluster inventory, topics, consumer groups, message tools, collector health, and audit events.
+The console is an operator workbench. The first screen should answer:
 
-### Collector
+- Is the cluster reachable?
+- Are all broker collectors fresh?
+- What changed recently?
+- What do the advisor agents think is risky?
+- Which action should the operator take next?
 
-Collectors run close to Kafka brokers. The first agent gathers cluster metadata using Kafka APIs and pushes heartbeats/snapshots to the API.
+### Broker Collector
+
+Collectors run near brokers. In Docker Compose this is modeled as one collector container per broker. In Kubernetes this maps to sidecars or DaemonSets. For bare metal or VM-based Kafka clusters, the same agent can run as a systemd service on each broker host.
+
+The collector is push-based so broker networks do not have to expose collector ports back to the control plane.
 
 Future collector responsibilities:
 
@@ -37,6 +47,20 @@ Future collector responsibilities:
 - Broker config drift detection.
 - Local log signal extraction.
 - Optional Kafka Connect and Schema Registry probes.
+
+### Advisor Agents
+
+The v0 agent layer is deterministic. It uses rules against sanitized platform context and returns the same shape a future model-backed executor can return.
+
+Current agents:
+
+- Navigator: product and workflow quality.
+- Sentinel: security posture.
+- Operator: SRE and collector health.
+- Steward: topic governance.
+- Scribe: project maintainability.
+
+Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
 
 ## Deployment Shape
 
@@ -54,17 +78,19 @@ flowchart LR
     C3 --> B3
   end
 
-  C1 --> API["Control plane API"]
+  C1 --> API["Brokara API"]
   C2 --> API
   C3 --> API
-  API --> UI["Web console"]
+  API --> UI["Brokara Console"]
   API --> KAFKA["Kafka Admin API"]
+  API --> AGENTS["Advisor Agents"]
 ```
 
 ## Near-Term Roadmap
 
-1. Persist clusters, audit logs, collectors, and snapshots in Postgres.
-2. Add Schema Registry and Kafka Connect clients.
-3. Add RBAC and OIDC.
-4. Add approval workflows for production mutations.
+1. Persist clusters, audit logs, collectors, snapshots, agent runs, and findings in Postgres.
+2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
+3. Add Schema Registry and Kafka Connect clients.
+4. Add lag and offset operations with dry-run/approval workflows.
 5. Add GitOps import/export for topics and connector configs.
+6. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

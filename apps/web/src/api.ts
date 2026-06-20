@@ -69,15 +69,61 @@ export type AuditEvent = {
   createdAt: string;
 };
 
+export type SecurityStatus = {
+  authMode: "dev" | "token";
+  apiTokenConfigured: boolean;
+  collectorTokenConfigured: boolean;
+  corsOrigin: string;
+  writeConfirmationRequired: boolean;
+};
+
+export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";
+
+export type AdvisorAgent = {
+  id: string;
+  name: string;
+  role: "ux" | "security" | "sre" | "governance" | "maintainer";
+  mission: string;
+  cadence: string;
+  score: number;
+  findings: AgentFinding[];
+};
+
+export type AgentFinding = {
+  id: string;
+  agentId: string;
+  severity: AgentSeverity;
+  title: string;
+  summary: string;
+  recommendation: string;
+  resourceType?: string;
+  resourceName?: string;
+};
+
+export type AgentRun = {
+  clusterId: string;
+  generatedAt: string;
+  agents: AdvisorAgent[];
+  findings: AgentFinding[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:18080";
+const apiToken = import.meta.env.VITE_BROKARA_API_TOKEN;
+const actor = import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const headers: Record<string, string> = {
+    "content-type": "application/json",
+    ...(init?.headers as Record<string, string> | undefined)
+  };
+
+  if (apiToken) {
+    headers.authorization = `Bearer ${apiToken}`;
+  }
+
   const response = await fetch(`${apiBaseUrl}${path}`, {
     ...init,
-    headers: {
-      "content-type": "application/json",
-      ...init?.headers
-    }
+    headers
   });
 
   if (!response.ok) {
@@ -89,12 +135,23 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clusters: () => request<Cluster[]>("/api/clusters"),
+  security: () => request<SecurityStatus>("/api/security/status"),
   overview: (clusterId: string) => request<Overview>(`/api/clusters/${clusterId}/overview`),
   topics: (clusterId: string) => request<Topic[]>(`/api/clusters/${clusterId}/topics`),
   consumerGroups: (clusterId: string) =>
     request<ConsumerGroup[]>(`/api/clusters/${clusterId}/consumer-groups`),
   collectors: () => request<CollectorState[]>("/api/collectors"),
   audit: () => request<AuditEvent[]>("/api/audit"),
+  agents: (clusterId: string) => request<AgentRun>(`/api/clusters/${clusterId}/agents`),
+  runAgents: (clusterId: string) =>
+    request<AgentRun>(`/api/clusters/${clusterId}/agents/run`, {
+      method: "POST",
+      headers: {
+        "x-brokara-actor": actor,
+        "x-brokara-confirm": "true"
+      },
+      body: JSON.stringify({})
+    }),
   createTopic: (
     clusterId: string,
     body: {
@@ -107,6 +164,10 @@ export const api = {
   ) =>
     request<{ created: boolean }>(`/api/clusters/${clusterId}/topics`, {
       method: "POST",
+      headers: {
+        "x-brokara-actor": actor,
+        "x-brokara-confirm": "true"
+      },
       body: JSON.stringify(body)
     }),
   produceMessage: (
@@ -119,10 +180,14 @@ export const api = {
   ) =>
     request<{ result: unknown }>(`/api/clusters/${clusterId}/messages/produce`, {
       method: "POST",
+      headers: {
+        "x-brokara-actor": actor,
+        "x-brokara-confirm": "true"
+      },
       body: JSON.stringify(body)
     }),
-  browseMessages: (clusterId: string, topic: string, limit = 25) =>
+  browseMessages: (clusterId: string, topic: string, limit = 25, fromBeginning = false) =>
     request<MessageRecord[]>(
-      `/api/clusters/${clusterId}/messages?topic=${encodeURIComponent(topic)}&limit=${limit}&fromBeginning=true&timeoutMs=3000`
+      `/api/clusters/${clusterId}/messages?topic=${encodeURIComponent(topic)}&limit=${limit}&fromBeginning=${fromBeginning}&timeoutMs=3000`
     )
 };

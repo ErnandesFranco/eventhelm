@@ -1,15 +1,15 @@
 {
-  "name": "open-kafka-control-plane",
+  "name": "brokara",
   "version": "0.1.0",
   "private": true,
-  "description": "Open-source Kafka control plane with broker-local collectors.",
+  "description": "Open-source Kafka operations cockpit with broker-local collectors and advisory agents.",
   "workspaces": [
     "apps/*"
   ],
   "scripts": {
     "build": "npm run build --workspaces",
     "typecheck": "npm run typecheck --workspaces",
-    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace @okcp/api\" \"npm run dev --workspace @okcp/web\"",
+    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace @brokara/api\" \"npm run dev --workspace @brokara/web\"",
     "compose:up": "docker compose up --build",
     "compose:down": "docker compose down -v",
     "compose:logs": "docker compose logs -f api web collector-1 collector-2 collector-3"

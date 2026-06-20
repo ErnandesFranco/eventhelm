@@ -8,14 +8,16 @@ const controlPlaneUrl = requiredEnv("CONTROL_PLANE_URL");
 const clusterId = requiredEnv("CLUSTER_ID");
 const brokerId = requiredEnv("BROKER_ID");
 const collectorId = process.env.COLLECTOR_ID ?? `${clusterId}-broker-${brokerId}`;
+const collectorToken = process.env.BROKARA_COLLECTOR_TOKEN;
 const kafkaBrokers = requiredEnv("KAFKA_BROKERS")
   .split(",")
   .map((broker) => broker.trim())
   .filter(Boolean);
 const intervalMs = Number(process.env.COLLECTOR_INTERVAL_MS ?? 10000);
+let stopping = false;
 
 const kafka = new Kafka({
-  clientId: `okcp-collector-${collectorId}`,
+  clientId: `brokara-collector-${collectorId}`,
   brokers: kafkaBrokers,
   logLevel: logLevel.ERROR
 });
@@ -41,11 +43,17 @@ function basePayload() {
 }
 
 async function postJson(path: string, body: unknown) {
+  const headers: Record<string, string> = {
+    "content-type": "application/json"
+  };
+
+  if (collectorToken) {
+    headers["x-brokara-collector-token"] = collectorToken;
+  }
+
   const response = await fetch(`${controlPlaneUrl}${path}`, {
     method: "POST",
-    headers: {
-      "content-type": "application/json"
-    },
+    headers,
     body: JSON.stringify(body)
   });
 
@@ -91,5 +99,17 @@ async function tick() {
 }
 
 console.log(`[collector:${collectorId}] starting for cluster=${clusterId} broker=${brokerId}`);
-await tick();
-setInterval(tick, intervalMs);
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    stopping = true;
+  });
+}
+
+await loop();
+
+async function loop() {
+  while (!stopping) {
+    await tick();
+    await new Promise((resolve) => setTimeout(resolve, intervalMs + Math.floor(Math.random() * 1000)));
+  }
+}

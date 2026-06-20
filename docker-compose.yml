@@ -1,9 +1,11 @@
+name: brokara
+
 services:
   kafka-1:
     image: apache/kafka:4.0.0
-    container_name: okcp-kafka-1
+    container_name: brokara-kafka-1
     ports:
-      - "19092:19092"
+      - "127.0.0.1:19092:19092"
     environment:
       KAFKA_NODE_ID: 1
       KAFKA_PROCESS_ROLES: broker,controller
@@ -21,9 +23,9 @@ services:
 
   kafka-2:
     image: apache/kafka:4.0.0
-    container_name: okcp-kafka-2
+    container_name: brokara-kafka-2
     ports:
-      - "29092:29092"
+      - "127.0.0.1:29092:29092"
     environment:
       KAFKA_NODE_ID: 2
       KAFKA_PROCESS_ROLES: broker,controller
@@ -41,9 +43,9 @@ services:
 
   kafka-3:
     image: apache/kafka:4.0.0
-    container_name: okcp-kafka-3
+    container_name: brokara-kafka-3
     ports:
-      - "39092:39092"
+      - "127.0.0.1:39092:39092"
     environment:
       KAFKA_NODE_ID: 3
       KAFKA_PROCESS_ROLES: broker,controller
@@ -81,24 +83,27 @@ services:
     build:
       context: .
       dockerfile: apps/api/Dockerfile
-    container_name: okcp-api
+    container_name: brokara-api
     depends_on:
       - kafka-init
     ports:
-      - "18080:8080"
+      - "127.0.0.1:18080:8080"
     environment:
       API_PORT: 8080
-      PLATFORM_CLUSTERS_JSON: '[{"id":"local","name":"Local Kafka Lab","brokers":["kafka-1:9092","kafka-2:9092","kafka-3:9092"]}]'
+      BROKARA_AUTH_MODE: dev
+      BROKARA_CORS_ORIGIN: http://localhost:15173
+      BROKARA_COLLECTOR_TOKEN: local-dev-collector-token
+      BROKARA_CLUSTERS_JSON: '[{"id":"local","name":"Local Kafka Lab","brokers":["kafka-1:9092","kafka-2:9092","kafka-3:9092"]}]'
 
   web:
     build:
       context: .
       dockerfile: apps/web/Dockerfile
-    container_name: okcp-web
+    container_name: brokara-web
     depends_on:
       - api
     ports:
-      - "15173:5173"
+      - "127.0.0.1:15173:5173"
     environment:
       VITE_API_BASE_URL: http://localhost:18080
 
@@ -106,7 +111,7 @@ services:
     build:
       context: .
       dockerfile: apps/collector/Dockerfile
-    container_name: okcp-collector-1
+    container_name: brokara-collector-1
     depends_on:
       - api
       - kafka-1
@@ -116,12 +121,13 @@ services:
       BROKER_ID: "1"
       KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       COLLECTOR_ID: local-broker-1
+      BROKARA_COLLECTOR_TOKEN: local-dev-collector-token
 
   collector-2:
     build:
       context: .
       dockerfile: apps/collector/Dockerfile
-    container_name: okcp-collector-2
+    container_name: brokara-collector-2
     depends_on:
       - api
       - kafka-2
@@ -131,12 +137,13 @@ services:
       BROKER_ID: "2"
       KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       COLLECTOR_ID: local-broker-2
+      BROKARA_COLLECTOR_TOKEN: local-dev-collector-token
 
   collector-3:
     build:
       context: .
       dockerfile: apps/collector/Dockerfile
-    container_name: okcp-collector-3
+    container_name: brokara-collector-3
     depends_on:
       - api
       - kafka-3
@@ -146,3 +153,4 @@ services:
       BROKER_ID: "3"
       KAFKA_BROKERS: kafka-1:9092,kafka-2:9092,kafka-3:9092
       COLLECTOR_ID: local-broker-3
+      BROKARA_COLLECTOR_TOKEN: local-dev-collector-token

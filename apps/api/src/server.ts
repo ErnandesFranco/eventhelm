@@ -1,9 +1,10 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { z } from "zod";
+import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
-import { getPort, loadClusters } from "./config.js";
+import { getCorsOrigin, getPort, getSecurityStatus, loadClusters } from "./config.js";
 import {
   browseMessages,
   createTopic,
@@ -12,6 +13,7 @@ import {
   listTopics,
   produceMessage
 } from "./kafka.js";
+import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
 
 const clusters = loadClusters();
 const app = Fastify({
@@ -19,7 +21,7 @@ const app = Fastify({
 });
 
 await app.register(cors, {
-  origin: true
+  origin: getCorsOrigin()
 });
 
 function getCluster(clusterId: string) {
@@ -32,11 +34,19 @@ function getCluster(clusterId: string) {
   return cluster;
 }
 
+function badRequest(message: string) {
+  const error = new Error(message);
+  (error as Error & { statusCode: number }).statusCode = 400;
+  return error;
+}
+
 app.get("/health", async () => ({
   ok: true,
-  service: "okcp-api",
+  service: "brokara-api",
   timestamp: new Date().toISOString()
 }));
+
+app.get("/api/security/status", async () => getSecurityStatus());
 
 app.get("/api/clusters", async () =>
   clusters.map((cluster) => ({
@@ -75,20 +85,35 @@ app.get("/api/clusters/:clusterId/topics", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/topics", async (request) => {
+  assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
       name: z.string().min(1),
-      partitions: z.coerce.number().int().min(1).max(1000),
+      partitions: z.coerce.number().int().min(1).max(200),
       replicationFactor: z.coerce.number().int().min(1).max(10),
       retentionMs: z.coerce.number().int().positive().optional(),
       cleanupPolicy: z.enum(["delete", "compact"]).optional()
     })
     .parse(request.body);
 
-  const created = await createTopic(getCluster(params.clusterId), body);
+  if (body.name.startsWith("__")) {
+    throw badRequest("Brokara will not create internal Kafka topics.");
+  }
+
+  if (!/^[a-z0-9]+([._-][a-z0-9]+)+$/.test(body.name)) {
+    throw badRequest("Topic names must use lowercase domain.event style segments.");
+  }
+
+  const cluster = getCluster(params.clusterId);
+  const description = await describeCluster(cluster);
+  if (body.replicationFactor > description.brokers.length) {
+    throw badRequest(`Replication factor ${body.replicationFactor} exceeds broker count ${description.brokers.length}.`);
+  }
+
+  const created = await createTopic(cluster, body);
   recordAudit({
-    actor: "system",
+    actor: actorFromRequest(request),
     action: "topic.create",
     clusterId: params.clusterId,
     resourceType: "topic",
@@ -105,19 +130,24 @@ app.get("/api/clusters/:clusterId/consumer-groups", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/messages/produce", async (request) => {
+  assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
       topic: z.string().min(1),
       key: z.string().optional(),
-      value: z.string().min(1),
+      value: z.string().min(1).max(1_000_000),
       headers: z.record(z.string()).optional()
     })
     .parse(request.body);
 
+  if (body.topic.startsWith("__")) {
+    throw badRequest("Brokara will not produce messages to internal Kafka topics.");
+  }
+
   const result = await produceMessage(getCluster(params.clusterId), body);
   recordAudit({
-    actor: "system",
+    actor: actorFromRequest(request),
     action: "message.produce",
     clusterId: params.clusterId,
     resourceType: "topic",
@@ -145,6 +175,7 @@ app.get("/api/clusters/:clusterId/messages", async (request) => {
 app.get("/api/collectors", async () => listCollectors());
 
 app.post("/api/collectors/heartbeat", async (request) => {
+  assertCollectorAllowed(request);
   const body = z
     .object({
       collectorId: z.string().min(1),
@@ -161,6 +192,7 @@ app.post("/api/collectors/heartbeat", async (request) => {
 });
 
 app.post("/api/collectors/snapshot", async (request) => {
+  assertCollectorAllowed(request);
   const body = z
     .object({
       collectorId: z.string().min(1),
@@ -188,6 +220,46 @@ app.post("/api/collectors/snapshot", async (request) => {
 });
 
 app.get("/api/audit", async () => listAuditEvents());
+
+app.get("/api/agents", async () => listAdvisorAgents());
+
+app.get("/api/clusters/:clusterId/agents", async (request) => {
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  return buildAgentRun(params.clusterId);
+});
+
+app.post("/api/clusters/:clusterId/agents/run", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  const run = await buildAgentRun(params.clusterId);
+  recordAudit({
+    actor: actorFromRequest(request),
+    action: "agents.run",
+    clusterId: params.clusterId,
+    resourceType: "agent",
+    details: { findingCount: run.findings.length }
+  });
+  return run;
+});
+
+async function buildAgentRun(clusterId: string) {
+  const cluster = getCluster(clusterId);
+  const [description, topics, consumerGroups] = await Promise.all([
+    describeCluster(cluster),
+    listTopics(cluster),
+    listConsumerGroups(cluster)
+  ]);
+
+  return runAdvisorAgents({
+    clusterId,
+    brokerCount: description.brokers.length,
+    topics,
+    consumerGroups,
+    collectors: listCollectors().filter((collector) => collector.heartbeat.clusterId === clusterId),
+    auditEvents: listAuditEvents().filter((event) => !event.clusterId || event.clusterId === clusterId),
+    security: getSecurityStatus()
+  });
+}
 
 const port = getPort();
 await app.listen({ host: "0.0.0.0", port });

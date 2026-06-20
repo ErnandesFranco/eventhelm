@@ -1,5 +1,5 @@
 import { z } from "zod";
-import type { ClusterConfig } from "./types.js";
+import type { ClusterConfig, SecurityMode, SecurityStatus } from "./types.js";
 
 const clusterSchema = z.object({
   id: z.string().min(1),
@@ -24,14 +24,14 @@ const defaultClusters: ClusterConfig[] = [
 ];
 
 export function loadClusters(): ClusterConfig[] {
-  const raw = process.env.PLATFORM_CLUSTERS_JSON;
+  const raw = process.env.BROKARA_CLUSTERS_JSON ?? process.env.PLATFORM_CLUSTERS_JSON;
   if (!raw) {
     return defaultClusters;
   }
 
   const parsed = z.array(clusterSchema).safeParse(JSON.parse(raw));
   if (!parsed.success) {
-    throw new Error(`Invalid PLATFORM_CLUSTERS_JSON: ${parsed.error.message}`);
+    throw new Error(`Invalid BROKARA_CLUSTERS_JSON: ${parsed.error.message}`);
   }
 
   return parsed.data;
@@ -39,4 +39,27 @@ export function loadClusters(): ClusterConfig[] {
 
 export function getPort(): number {
   return Number(process.env.API_PORT ?? 18080);
+}
+
+export function getSecurityStatus(): SecurityStatus {
+  const authMode = (process.env.BROKARA_AUTH_MODE ?? "dev") as SecurityMode;
+  return {
+    authMode,
+    apiTokenConfigured: Boolean(process.env.BROKARA_API_TOKEN),
+    collectorTokenConfigured: Boolean(process.env.BROKARA_COLLECTOR_TOKEN),
+    corsOrigin: process.env.BROKARA_CORS_ORIGIN ?? "*",
+    writeConfirmationRequired: process.env.BROKARA_REQUIRE_WRITE_CONFIRMATION === "true"
+  };
+}
+
+export function getApiToken(): string | undefined {
+  return process.env.BROKARA_API_TOKEN;
+}
+
+export function getCollectorToken(): string | undefined {
+  return process.env.BROKARA_COLLECTOR_TOKEN;
+}
+
+export function getCorsOrigin(): string | true {
+  return process.env.BROKARA_CORS_ORIGIN ?? true;
 }
