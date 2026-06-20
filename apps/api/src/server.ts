@@ -789,6 +789,7 @@ async function buildAgentRun(clusterId: string, actor: string, trigger: "automat
         consumerGroups,
         collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
         auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
+        clusters: clusters.map(toPublicCluster),
         security: getSecurityStatus(),
         persistenceMode: persistenceMode()
       },

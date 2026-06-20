@@ -11,6 +11,7 @@ import type {
   SecurityStatus,
   TopicSummary
 } from "./types.js";
+import type { PublicCluster } from "./clusterRegistry.js";
 
 type AgentContext = {
   clusterId: string;
@@ -19,6 +20,7 @@ type AgentContext = {
   consumerGroups: ConsumerGroupSummary[];
   collectors: CollectorState[];
   auditEvents: AuditEvent[];
+  clusters: PublicCluster[];
   security: SecurityStatus;
   persistenceMode: "postgres" | "memory";
 };
@@ -171,6 +173,21 @@ function runSentinel(context: AgentContext): AgentFinding[] {
         "The API currently accepts browser requests from any origin.",
         "Set EVENTHELM_CORS_ORIGIN to the deployed console origin in shared environments.",
         "security"
+      )
+    );
+  }
+
+  const inlineSaslClusters = context.clusters.filter((cluster) => cluster.saslPasswordSource === "inline");
+  if (inlineSaslClusters.length > 0) {
+    findings.push(
+      finding(
+        "sentinel",
+        "medium",
+        "Kafka credentials are stored inline",
+        `${inlineSaslClusters.length} cluster registry entr${inlineSaslClusters.length === 1 ? "y uses" : "ies use"} an inline SASL password.`,
+        "Move Kafka SASL passwords to passwordEnv references backed by deployment secrets before sharing the control plane.",
+        "cluster",
+        inlineSaslClusters[0]?.id
       )
     );
   }

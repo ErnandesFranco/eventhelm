@@ -12,6 +12,16 @@ test("advisor sweeps include durable run metadata and severity summary", async (
       consumerGroups: [],
       collectors: [],
       auditEvents: [],
+      clusters: [
+        {
+          id: "agent-test",
+          name: "Agent Test",
+          brokers: ["localhost:19092"],
+          saslConfigured: true,
+          saslPasswordSource: "inline",
+          source: "api"
+        }
+      ],
       security: {
         authMode: "dev",
         apiTokenConfigured: false,
@@ -30,6 +40,7 @@ test("advisor sweeps include durable run metadata and severity summary", async (
   assert.equal(run.summary.findings, run.findings.length);
   assert.ok(run.summary.score < 100);
   assert.ok(run.summary.high > 0);
+  assert.ok(run.findings.some((finding) => finding.id === "sentinel-kafka-credentials-are-stored-inline"));
 
   const saved = await saveAgentRun(run, "test-suite", "manual");
   const history = await listAgentRuns("agent-test", 5);
