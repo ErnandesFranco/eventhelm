@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import type { CollectorState, PartitionPlacement, RebalanceMovement, RebalancePlan } from "./types.js";
 
 export type RebalancePlanInput = {
@@ -151,6 +152,7 @@ export function buildDiskRebalancePlan({
     : "Rebalance execution is locked. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true after approvals and RBAC are configured.";
 
   return {
+    id: nanoid(),
     clusterId,
     generatedAt: new Date().toISOString(),
     strategy: "disk-pressure",

@@ -49,6 +49,20 @@ export async function initDatabase() {
 
     create index if not exists collector_states_cluster_id_idx on collector_states (cluster_id);
     create index if not exists collector_states_observed_at_idx on collector_states (observed_at desc);
+
+    create table if not exists rebalance_plans (
+      id text primary key,
+      cluster_id text not null,
+      actor text not null,
+      status text not null,
+      plan jsonb not null,
+      created_at timestamptz not null default now(),
+      executed_at timestamptz
+    );
+
+    create index if not exists rebalance_plans_cluster_id_idx on rebalance_plans (cluster_id);
+    create index if not exists rebalance_plans_created_at_idx on rebalance_plans (created_at desc);
+    create index if not exists rebalance_plans_status_idx on rebalance_plans (status);
   `);
 }
 

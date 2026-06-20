@@ -63,7 +63,9 @@ EventHelm includes a disk-pressure rebalance planner:
 - Collectors can mount broker log data at `BROKER_DATA_PATH` and report disk pressure.
 - Collectors scan broker log directories and report per-partition byte sizes for movement estimates.
 - `POST /api/clusters/:clusterId/rebalance/plan` generates a Kafka reassignment payload.
+- Generated plans are persisted with a plan ID before operators can apply them.
 - The planner preserves replication factor, skips under-replicated partitions, prefers follower replica moves before leader moves, and scores targets by projected disk usage.
+- Execution reloads the stored plan and rejects stale plans when current replica placement no longer matches the reviewed assignments.
 - Execution is locked unless `EVENTHELM_ENABLE_REBALANCE_EXECUTION=true` is set.
 
 ## Security Status

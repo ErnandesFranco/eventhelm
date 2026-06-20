@@ -529,7 +529,7 @@ function RebalanceView({
     setBusy(true);
     setError(null);
     try {
-      await api.executeRebalance(clusterId, plan.kafkaJsRequest);
+      await api.executeRebalance(clusterId, plan.id);
       await onAuditChanged();
       await generatePlan();
     } catch (caught) {
@@ -738,7 +738,7 @@ function RebalanceView({
           </section>
 
           <section className="surface reassignmentPayload">
-            <SurfaceHeader icon={ClipboardCopy} title="Reassignment Payload" meta="Kafka-compatible JSON" />
+            <SurfaceHeader icon={ClipboardCopy} title="Reassignment Payload" meta={`Plan ${plan.id.slice(0, 8)}`} />
             <pre>{JSON.stringify(plan.reassignment, null, 2)}</pre>
             <footer>
               <button className="secondaryButton" type="button" onClick={() => void copyPayload()}>

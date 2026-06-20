@@ -127,6 +127,7 @@ export type AgentRun = {
 };
 
 export type RebalancePlan = {
+  id: string;
   clusterId: string;
   generatedAt: string;
   strategy: "disk-pressure";
@@ -243,14 +244,14 @@ export const api = {
       },
       body: JSON.stringify(body)
     }),
-  executeRebalance: (clusterId: string, topics: RebalancePlan["kafkaJsRequest"]) =>
-    request<{ accepted: boolean }>(`/api/clusters/${clusterId}/rebalance/execute`, {
+  executeRebalance: (clusterId: string, planId: string) =>
+    request<{ accepted: boolean; planId: string }>(`/api/clusters/${clusterId}/rebalance/execute`, {
       method: "POST",
       headers: {
         "x-eventhelm-actor": actor,
         "x-eventhelm-confirm": "true"
       },
-      body: JSON.stringify({ topics })
+      body: JSON.stringify({ planId })
     }),
   createTopic: (
     clusterId: string,

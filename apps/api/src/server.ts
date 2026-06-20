@@ -17,7 +17,9 @@ import {
   produceMessage
 } from "./kafka.js";
 import { buildDiskRebalancePlan } from "./rebalance.js";
+import { getRebalancePlan, markRebalancePlanExecuted, saveRebalancePlan } from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
+import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
 const clusters = loadClusters();
 const app = Fastify({
@@ -50,6 +52,24 @@ function forbidden(message: string) {
   const error = new Error(message);
   (error as Error & { statusCode: number }).statusCode = 403;
   return error;
+}
+
+function assertRebalancePlanCurrent(plan: RebalancePlan, placements: PartitionPlacement[]) {
+  const placementByKey = new Map(placements.map((placement) => [`${placement.topic}\u0000${placement.partition}`, placement]));
+  const staleMovements = plan.movements.filter((movement) => {
+    const placement = placementByKey.get(`${movement.topic}\u0000${movement.partition}`);
+    return !placement || !sameReplicas(placement.replicas, movement.currentReplicas);
+  });
+
+  if (staleMovements.length > 0) {
+    throw badRequest(
+      `Rebalance plan is stale. ${staleMovements.length} planned partitions no longer match their reviewed replica assignments.`
+    );
+  }
+}
+
+function sameReplicas(left: number[], right: number[]) {
+  return left.length === right.length && left.every((replica, index) => replica === right[index]);
 }
 
 app.get("/health", async () => ({
@@ -213,14 +233,17 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
       executionEnabled: isRebalanceExecutionEnabled()
     }
   });
+  const actor = actorFromRequest(request);
+  await saveRebalancePlan(plan, actor);
 
   await recordAudit({
-    actor: actorFromRequest(request),
+    actor,
     action: "rebalance.plan",
     clusterId: params.clusterId,
     resourceType: "cluster",
     resourceName: params.clusterId,
     details: {
+      planId: plan.id,
       movements: plan.summary.movements,
       sources: plan.summary.sourceBrokerIds,
       targets: plan.summary.targetBrokerIds
@@ -239,31 +262,42 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
-      topics: z.array(
-        z.object({
-          topic: z.string().min(1),
-          partitionAssignment: z.array(
-            z.object({
-              partition: z.number().int().nonnegative(),
-              replicas: z.array(z.number().int().nonnegative()).min(1)
-            })
-          )
-        })
-      )
+      planId: z.string().min(1)
     })
     .parse(request.body);
 
-  await alterPartitionAssignments(getCluster(params.clusterId), body.topics);
+  const storedPlan = await getRebalancePlan(body.planId);
+  if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
+    throw badRequest("Rebalance plan was not found for this cluster.");
+  }
+  if (storedPlan.status === "executed") {
+    throw badRequest("Rebalance plan has already been executed.");
+  }
+  if (!storedPlan.plan.executable || storedPlan.plan.movements.length === 0) {
+    throw badRequest("Rebalance plan is not executable. Regenerate a plan after enabling execution.");
+  }
+
+  const cluster = getCluster(params.clusterId);
+  const currentPlacements = await listPartitionPlacements(cluster, true);
+  assertRebalancePlanCurrent(storedPlan.plan, currentPlacements);
+
+  await alterPartitionAssignments(cluster, storedPlan.plan.kafkaJsRequest);
+  await markRebalancePlanExecuted(storedPlan.id);
   await recordAudit({
     actor: actorFromRequest(request),
     action: "rebalance.execute",
     clusterId: params.clusterId,
     resourceType: "cluster",
     resourceName: params.clusterId,
-    details: { topics: body.topics.length }
+    details: {
+      planId: storedPlan.id,
+      topics: storedPlan.plan.kafkaJsRequest.length,
+      movements: storedPlan.plan.summary.movements,
+      estimatedBytesMoved: storedPlan.plan.summary.estimatedBytesMoved
+    }
   });
 
-  return { accepted: true };
+  return { accepted: true, planId: storedPlan.id };
 });
 
 app.get("/api/collectors", async () => listCollectors());

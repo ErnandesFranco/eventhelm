@@ -15,7 +15,7 @@ npm run compose:up
 
 The project currently needs help with:
 
-- Postgres persistence for configured clusters, agent runs, findings, and rebalance plans.
+- Postgres persistence for configured clusters, agent runs, findings, and executed rebalance history.
 - Kafka topic config and lag APIs.
 - OIDC/RBAC and policy checks.
 - Collector JMX metrics.

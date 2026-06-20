@@ -99,6 +99,7 @@ export type RebalanceMovement = {
 };
 
 export type RebalancePlan = {
+  id: string;
   clusterId: string;
   generatedAt: string;
   strategy: "disk-pressure";

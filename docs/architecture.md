@@ -73,8 +73,10 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 2. Collectors scan partition log directories and report per-partition byte sizes.
 3. The API reads Kafka partition placement metadata and generates a reassignment plan that moves replicas away from disk-pressured brokers.
 4. The planner scores target brokers by projected disk usage and estimates bytes moved from collector log-dir telemetry.
-5. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
-6. Execution stays locked by default until production auth, approvals, and RBAC are configured.
+5. The API persists the generated plan and returns a plan ID.
+6. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
+7. Execution accepts the stored plan ID, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
+8. Execution stays locked by default until production auth, approvals, and RBAC are configured.
 
 ## Deployment Shape
 
@@ -102,7 +104,7 @@ flowchart LR
 
 ## Near-Term Roadmap
 
-1. Persist configured clusters, agent runs, findings, and rebalance plans in Postgres.
+1. Persist configured clusters, agent runs, findings, and executed rebalance history in Postgres.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add lag and offset operations with dry-run/approval workflows.
