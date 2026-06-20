@@ -477,6 +477,20 @@ const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:18080"
 const apiToken = import.meta.env.VITE_EVENTHELM_API_TOKEN ?? import.meta.env.VITE_BROKARA_API_TOKEN;
 const actor = import.meta.env.VITE_EVENTHELM_ACTOR ?? import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
 
+export class ApiRequestError extends Error {
+  readonly statusCode: number;
+  readonly code?: string;
+  readonly details?: unknown;
+
+  constructor(message: string, options: { statusCode: number; code?: string; details?: unknown }) {
+    super(message);
+    this.name = "ApiRequestError";
+    this.statusCode = options.statusCode;
+    this.code = options.code;
+    this.details = options.details;
+  }
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
     ...(init?.headers as Record<string, string> | undefined)
@@ -496,10 +510,33 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
   });
 
   if (!response.ok) {
-    throw new Error(await response.text());
+    throw await apiErrorFromResponse(response);
   }
 
   return response.json() as Promise<T>;
+}
+
+async function apiErrorFromResponse(response: Response): Promise<ApiRequestError> {
+  const text = await response.text();
+  if (!text) {
+    return new ApiRequestError(`Request failed with HTTP ${response.status}.`, { statusCode: response.status });
+  }
+
+  try {
+    const body = JSON.parse(text) as { message?: unknown; error?: unknown; code?: unknown; details?: unknown };
+    const message = typeof body.message === "string" && body.message.length > 0
+      ? body.message
+      : typeof body.error === "string" && body.error.length > 0
+        ? body.error
+        : `Request failed with HTTP ${response.status}.`;
+    return new ApiRequestError(message, {
+      statusCode: response.status,
+      code: typeof body.code === "string" ? body.code : undefined,
+      details: body.details
+    });
+  } catch {
+    return new ApiRequestError(text, { statusCode: response.status });
+  }
 }
 
 export const api = {
