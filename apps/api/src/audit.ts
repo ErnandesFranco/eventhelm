@@ -72,7 +72,11 @@ export async function listAuditEvents(filters: AuditEventFilters = {}): Promise<
       values.push(`%${filters.query}%`);
       const index = values.length;
       clauses.push(
-        `(actor ilike $${index} or action ilike $${index} or resource_type ilike $${index} or resource_name ilike $${index})`
+        `(actor ilike $${index}
+          or action ilike $${index}
+          or resource_type ilike $${index}
+          or resource_name ilike $${index}
+          or coalesce(details::text, '') ilike $${index})`
       );
     }
 
@@ -126,7 +130,7 @@ function matchesFilters(event: AuditEvent, filters: AuditEventFilters) {
     return false;
   }
   if (filters.query) {
-    return `${event.actor} ${event.action} ${event.resourceType ?? ""} ${event.resourceName ?? ""}`
+    return `${event.actor} ${event.action} ${event.resourceType ?? ""} ${event.resourceName ?? ""} ${JSON.stringify(event.details ?? {})}`
       .toLowerCase()
       .includes(filters.query.toLowerCase());
   }

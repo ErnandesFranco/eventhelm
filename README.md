@@ -133,7 +133,7 @@ EventHelm includes a disk-pressure rebalance planner:
 The audit ledger supports investigation filters:
 
 - `GET /api/audit` returns recent events.
-- Query parameters include `clusterId`, `actor`, `action`, `resourceType`, `resourceName`, `query`, and `limit`.
+- Query parameters include `clusterId`, `actor`, `action`, `resourceType`, `resourceName`, `query`, and `limit`; `query` searches actor, action, resource, and structured event details.
 - The console Audit view includes search, action, actor, and resource filters for operator triage.
 
 ## Security Status
