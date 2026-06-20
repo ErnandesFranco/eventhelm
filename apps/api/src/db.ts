@@ -159,6 +159,26 @@ const migrations: DatabaseMigration[] = [
       create index if not exists cluster_change_reviews_status_idx on cluster_change_reviews (status);
       create index if not exists cluster_change_reviews_created_at_idx on cluster_change_reviews (created_at desc);
     `
+  },
+  {
+    id: "005_rebalance_execution_lifecycle",
+    name: "Rebalance execution lifecycle",
+    sql: `
+      alter table rebalance_plans
+        add column if not exists execution_started_at timestamptz,
+        add column if not exists execution_started_by text;
+
+      update rebalance_plans
+      set execution_started_at = executed_at
+      where status = 'executed'
+        and executed_at is not null
+        and execution_started_at is null;
+
+      create index if not exists rebalance_plans_execution_started_at_idx on rebalance_plans (execution_started_at desc);
+      create unique index if not exists rebalance_plans_one_executing_per_cluster_idx
+        on rebalance_plans (cluster_id)
+        where status = 'executing';
+    `
   }
 ];
 

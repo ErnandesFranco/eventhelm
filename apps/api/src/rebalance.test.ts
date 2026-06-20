@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { buildDiskRebalancePlan, buildRebalancePreflight } from "./rebalance.js";
+import { buildDiskRebalancePlan, buildRebalancePreflight, evaluateRebalanceExecutionCompletion } from "./rebalance.js";
 import type { CollectorState, DiskTelemetry, PartitionPlacement, RebalanceExecutionStatus, RebalancePlan, RebalancePlanRecord } from "./types.js";
 
 const brokers = [
@@ -179,6 +179,41 @@ test("buildRebalancePreflight fails when planned movements lack byte estimates",
   assert.equal(preflight.checks.find((check) => check.id === "movement-size-coverage")?.status, "fail");
 });
 
+test("rebalance execution completion requires inactive Kafka status and proposed placement", () => {
+  const plan = planFixture();
+  const movement = plan.movements[0];
+  assert.ok(movement);
+
+  const pending = evaluateRebalanceExecutionCompletion({
+    plan,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements
+  });
+  assert.equal(pending.complete, false);
+  assert.equal(pending.incompleteMovementCount, 1);
+
+  const completedPlacements = placements.map((candidate) =>
+    candidate.topic === movement.topic && candidate.partition === movement.partition
+      ? placement(candidate.topic, candidate.partition, candidate.leader, movement.proposedReplicas)
+      : candidate
+  );
+  const active = evaluateRebalanceExecutionCompletion({
+    plan,
+    reassignmentStatus: activeReassignmentStatus(movement.topic, movement.partition),
+    currentPlacements: completedPlacements
+  });
+  assert.equal(active.complete, false);
+  assert.equal(active.active, true);
+
+  const completed = evaluateRebalanceExecutionCompletion({
+    plan,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: completedPlacements
+  });
+  assert.equal(completed.complete, true);
+  assert.equal(completed.incompleteMovementCount, 0);
+});
+
 function planFixture(): RebalancePlan {
   return buildDiskRebalancePlan({
     clusterId: "local",
@@ -226,6 +261,25 @@ function inactiveReassignmentStatus(): RebalanceExecutionStatus {
     activeTopicCount: 0,
     activePartitionCount: 0,
     reassignments: []
+  };
+}
+
+function activeReassignmentStatus(topic: string, partition: number): RebalanceExecutionStatus {
+  return {
+    clusterId: "local",
+    checkedAt: new Date().toISOString(),
+    active: true,
+    activeTopicCount: 1,
+    activePartitionCount: 1,
+    reassignments: [
+      {
+        topic,
+        partition,
+        replicas: [1, 2, 3, 4],
+        addingReplicas: [4],
+        removingReplicas: [1]
+      }
+    ]
   };
 }
 

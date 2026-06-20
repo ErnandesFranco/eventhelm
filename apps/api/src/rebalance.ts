@@ -368,6 +368,42 @@ export function staleRebalanceMovements(plan: RebalancePlan, placements: Partiti
   });
 }
 
+export function evaluateRebalanceExecutionCompletion({
+  plan,
+  reassignmentStatus,
+  currentPlacements
+}: {
+  plan: RebalancePlan;
+  reassignmentStatus: RebalanceExecutionStatus;
+  currentPlacements: PartitionPlacement[];
+}) {
+  const placementByKey = new Map(currentPlacements.map((placement) => [partitionKey(placement.topic, placement.partition), placement]));
+  const incompleteMovements = plan.movements.filter((movement) => {
+    const placement = placementByKey.get(partitionKey(movement.topic, movement.partition));
+    return !placement || !sameReplicas(placement.replicas, movement.proposedReplicas);
+  });
+  const blockedReasons = [
+    reassignmentStatus.active
+      ? `Kafka still reports ${reassignmentStatus.activePartitionCount} active partition reassignment${
+          reassignmentStatus.activePartitionCount === 1 ? "" : "s"
+        }.`
+      : undefined,
+    incompleteMovements.length > 0
+      ? `${incompleteMovements.length} planned partition movement${
+          incompleteMovements.length === 1 ? "" : "s"
+        } have not reached the proposed replica placement.`
+      : undefined
+  ].filter((reason): reason is string => Boolean(reason));
+
+  return {
+    complete: !reassignmentStatus.active && incompleteMovements.length === 0,
+    active: reassignmentStatus.active,
+    incompleteMovementCount: incompleteMovements.length,
+    incompleteMovements: incompleteMovements.slice(0, 10).map((movement) => `${movement.topic}:${movement.partition}`),
+    blockedReasons
+  };
+}
+
 function buildBrokerPressure(brokers: Broker[], collectors: CollectorState[], placements: PartitionPlacement[]): BrokerPressure[] {
   const collectorEntries: Array<[number, CollectorState]> = [];
   for (const collector of collectors) {

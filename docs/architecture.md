@@ -100,8 +100,9 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 7. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
 8. The console and API expose Kafka's active partition reassignment status.
 9. Operators can run a preflight against a stored plan. The preflight checks the execution switch, approval state, executable plan shape, movement byte-estimate coverage, active Kafka reassignments, reviewed placement drift, collector disk coverage, collector freshness, and planner warnings.
-10. Execution accepts only approved stored plan IDs, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
-11. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
+10. Execution accepts only approved stored plan IDs, claims a single in-flight `executing` plan per cluster, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
+11. EventHelm marks an executing plan `executed` only after Kafka reports no active reassignment and live replica placement matches the proposed assignments.
+12. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
 
 ### Consumer Offset Reset
 

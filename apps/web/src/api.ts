@@ -402,7 +402,7 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
-export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executed";
+export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executing" | "executed";
 
 export type RebalancePlanRecord = {
   id: string;
@@ -410,6 +410,8 @@ export type RebalancePlanRecord = {
   actor: string;
   status: RebalancePlanStatus;
   createdAt: string;
+  executionStartedAt?: string;
+  executionStartedBy?: string;
   executedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;
@@ -670,7 +672,7 @@ export const api = {
       body: JSON.stringify({ comment })
     }),
   executeRebalance: (clusterId: string, planId: string) =>
-    request<{ accepted: boolean; planId: string }>(`/api/clusters/${clusterId}/rebalance/execute`, {
+    request<{ accepted: boolean; planId: string; status: "executing"; executionStartedAt?: string }>(`/api/clusters/${clusterId}/rebalance/execute`, {
       method: "POST",
       headers: {
         "x-eventhelm-actor": actor,

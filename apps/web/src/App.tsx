@@ -774,6 +774,11 @@ function RebalanceView({
     void refreshExecutionStatus();
   }, [refreshExecutionStatus, refreshPlanHistory]);
 
+  async function refreshExecutionAndHistory() {
+    await refreshExecutionStatus();
+    await refreshPlanHistory();
+  }
+
   function resetPlan() {
     setPlan(null);
     setPreflight(null);
@@ -828,9 +833,9 @@ function RebalanceView({
       await refreshExecutionStatus();
       await refreshPlanHistory();
       await onAuditChanged();
-      await generatePlan();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
       setBusy(false);
     }
   }
@@ -883,6 +888,8 @@ function RebalanceView({
 
   const brokerPressure = plan?.brokerPressure ?? brokerPressureFromOverview(overview);
   const placementComputed = Boolean(plan);
+  const executingPlan = planHistory.find((record) => record.status === "executing");
+  const executionBlocked = Boolean(executionStatus?.active || executingPlan);
 
   return (
     <div className="viewStack">
@@ -899,7 +906,7 @@ function RebalanceView({
 
       {error ? <div className="notice error">{error}</div> : null}
 
-      <RebalanceExecutionStatusPanel status={executionStatus} busy={statusBusy} onRefresh={() => void refreshExecutionStatus()} />
+      <RebalanceExecutionStatusPanel status={executionStatus} busy={statusBusy} onRefresh={() => void refreshExecutionAndHistory()} />
 
       <section className="surface rebalanceControls">
         <SurfaceHeader icon={HardDrive} title="Planning Controls" meta="dry-run first" />
@@ -1032,8 +1039,8 @@ function RebalanceView({
             <Metric
               icon={ShieldCheck}
               label="Execution"
-              value={executionStatus?.active ? "Active" : plan.executable ? "Ready" : "Locked"}
-              detail={executionStatus?.active ? "Kafka movement running" : plan.executable ? "backend accepts apply" : "requires opt-in"}
+              value={executionBlocked ? "Active" : plan.executable ? "Ready" : "Locked"}
+              detail={executionBlocked ? "rebalance in progress" : plan.executable ? "backend accepts apply" : "requires opt-in"}
             />
           </section>
 
@@ -1095,11 +1102,11 @@ function RebalanceView({
               <button
                 className="primaryButton"
                 type="button"
-                disabled={!plan.executable || !preflight?.executable || busy || preflightBusy || Boolean(executionStatus?.active)}
+                disabled={!plan.executable || !preflight?.executable || busy || preflightBusy || executionBlocked}
                 onClick={() => void executePlan()}
               >
                 <ArrowRightLeft size={17} />
-                {executionStatus?.active
+                {executionBlocked
                   ? "Reassignment active"
                   : !plan.executable
                     ? "Execution locked"
@@ -1290,7 +1297,11 @@ function RebalancePlanHistory({
           <span>
             <strong>{record.warnings.length} warnings</strong>
             <small>
-              {record.reviewedBy ? `reviewed by ${record.reviewedBy}` : record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}
+              {record.executionStartedBy
+                ? `started by ${record.executionStartedBy}`
+                : record.reviewedBy
+                  ? `reviewed by ${record.reviewedBy}`
+                  : record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}
             </small>
           </span>
           <span className="planActionGroup">
@@ -1301,7 +1312,7 @@ function RebalancePlanHistory({
             <button
               className="secondaryButton compactButton"
               type="button"
-              disabled={record.status === "approved" || record.status === "executed"}
+              disabled={record.status === "approved" || record.status === "executing" || record.status === "executed"}
               onClick={() => onApprove(record.id)}
             >
               <ShieldCheck size={15} />
@@ -1310,7 +1321,7 @@ function RebalancePlanHistory({
             <button
               className="secondaryButton compactButton"
               type="button"
-              disabled={record.status === "rejected" || record.status === "executed"}
+              disabled={record.status === "rejected" || record.status === "executing" || record.status === "executed"}
               onClick={() => onReject(record.id)}
             >
               <X size={15} />

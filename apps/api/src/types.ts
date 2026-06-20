@@ -196,7 +196,7 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
-export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executed";
+export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executing" | "executed";
 
 export type RebalancePlanRecord = {
   id: string;
@@ -204,6 +204,8 @@ export type RebalancePlanRecord = {
   actor: string;
   status: RebalancePlanStatus;
   createdAt: string;
+  executionStartedAt?: string;
+  executionStartedBy?: string;
   executedAt?: string;
   reviewedBy?: string;
   reviewedAt?: string;

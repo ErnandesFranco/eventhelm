@@ -8,6 +8,8 @@ type RebalancePlanRow = {
   status: RebalancePlanStatus;
   plan: RebalancePlan;
   created_at: Date;
+  execution_started_at?: Date;
+  execution_started_by?: string;
   executed_at?: Date;
   reviewed_by?: string;
   reviewed_at?: Date;
@@ -46,7 +48,7 @@ export async function saveRebalancePlan(plan: RebalancePlan, actor: string): Pro
 export async function getRebalancePlan(planId: string): Promise<RebalancePlanRecord | undefined> {
   if (persistenceMode() === "postgres") {
     const result = await query<RebalancePlanRow>(
-      `select id, cluster_id, actor, status, plan, created_at, executed_at, reviewed_by, reviewed_at, review_comment
+      `select id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment
        from rebalance_plans
        where id = $1`,
       [planId]
@@ -60,7 +62,7 @@ export async function getRebalancePlan(planId: string): Promise<RebalancePlanRec
 export async function listRebalancePlans(clusterId: string, limit = 25): Promise<RebalancePlanSummaryRecord[]> {
   if (persistenceMode() === "postgres") {
     const result = await query<RebalancePlanRow>(
-      `select id, cluster_id, actor, status, plan, created_at, executed_at, reviewed_by, reviewed_at, review_comment
+      `select id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment
        from rebalance_plans
        where cluster_id = $1
        order by created_at desc
@@ -93,7 +95,7 @@ export async function markRebalancePlanReviewed(
            reviewed_at = $4,
            review_comment = $5
        where id = $1
-       returning id, cluster_id, actor, status, plan, created_at, executed_at, reviewed_by, reviewed_at, review_comment`,
+       returning id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment`,
       [planId, status, actor, reviewedAt, comment ?? null]
     );
     return result.rows[0] ? rowToRecord(result.rows[0]) : undefined;
@@ -114,28 +116,126 @@ export async function markRebalancePlanReviewed(
   return next;
 }
 
-export async function markRebalancePlanExecuted(planId: string): Promise<void> {
-  const executedAt = new Date().toISOString();
+export async function listExecutingRebalancePlans(clusterId: string): Promise<RebalancePlanRecord[]> {
+  if (persistenceMode() === "postgres") {
+    const result = await query<RebalancePlanRow>(
+      `select id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment
+       from rebalance_plans
+       where cluster_id = $1
+         and status = 'executing'
+       order by execution_started_at asc nulls last, created_at asc`,
+      [clusterId]
+    );
+    return result.rows.map(rowToRecord);
+  }
 
+  return [...plans.values()]
+    .filter((record) => record.clusterId === clusterId && record.status === "executing")
+    .sort((left, right) => new Date(left.executionStartedAt ?? left.createdAt).getTime() - new Date(right.executionStartedAt ?? right.createdAt).getTime());
+}
+
+export async function markRebalancePlanExecutionStarted(planId: string, actor: string): Promise<RebalancePlanRecord | undefined> {
+  const executionStartedAt = new Date().toISOString();
+
+  if (persistenceMode() === "postgres") {
+    try {
+      const result = await query<RebalancePlanRow>(
+        `update rebalance_plans
+         set status = 'executing',
+             execution_started_at = $2,
+             execution_started_by = $3
+         where id = $1
+           and status = 'approved'
+           and not exists (
+             select 1
+             from rebalance_plans active
+             where active.cluster_id = rebalance_plans.cluster_id
+               and active.status = 'executing'
+               and active.id <> rebalance_plans.id
+           )
+         returning id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment`,
+        [planId, executionStartedAt, actor]
+      );
+      return result.rows[0] ? rowToRecord(result.rows[0]) : undefined;
+    } catch (caught) {
+      if ((caught as { code?: string }).code === "23505") {
+        return undefined;
+      }
+      throw caught;
+    }
+  }
+
+  const record = plans.get(planId);
+  if (!record || record.status !== "approved") {
+    return undefined;
+  }
+  const hasExecutingPlan = [...plans.values()].some((candidate) => candidate.clusterId === record.clusterId && candidate.status === "executing" && candidate.id !== record.id);
+  if (hasExecutingPlan) {
+    return undefined;
+  }
+  const next: RebalancePlanRecord = {
+    ...record,
+    status: "executing",
+    executionStartedAt,
+    executionStartedBy: actor
+  };
+  plans.set(planId, next);
+  return next;
+}
+
+export async function releaseRebalancePlanExecution(planId: string): Promise<void> {
   if (persistenceMode() === "postgres") {
     await query(
       `update rebalance_plans
-       set status = 'executed',
-           executed_at = $2
-       where id = $1`,
-      [planId, executedAt]
+       set status = 'approved',
+           execution_started_at = null,
+           execution_started_by = null
+       where id = $1
+         and status = 'executing'`,
+      [planId]
     );
     return;
   }
 
   const record = plans.get(planId);
-  if (record) {
+  if (record?.status === "executing") {
     plans.set(planId, {
       ...record,
-      status: "executed",
-      executedAt
+      status: "approved",
+      executionStartedAt: undefined,
+      executionStartedBy: undefined
     });
   }
+}
+
+export async function markRebalancePlanExecuted(planId: string): Promise<RebalancePlanRecord | undefined> {
+  const executedAt = new Date().toISOString();
+
+  if (persistenceMode() === "postgres") {
+    const result = await query<RebalancePlanRow>(
+      `update rebalance_plans
+       set status = 'executed',
+           execution_started_at = coalesce(execution_started_at, $2),
+           executed_at = $2
+       where id = $1
+       returning id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment`,
+      [planId, executedAt]
+    );
+    return result.rows[0] ? rowToRecord(result.rows[0]) : undefined;
+  }
+
+  const record = plans.get(planId);
+  if (record) {
+    const next: RebalancePlanRecord = {
+      ...record,
+      status: "executed",
+      executionStartedAt: record.executionStartedAt ?? executedAt,
+      executedAt
+    };
+    plans.set(planId, next);
+    return next;
+  }
+  return undefined;
 }
 
 function rowToRecord(row: RebalancePlanRow): RebalancePlanRecord {
@@ -146,6 +246,8 @@ function rowToRecord(row: RebalancePlanRow): RebalancePlanRecord {
     status: row.status,
     plan: row.plan,
     createdAt: row.created_at.toISOString(),
+    executionStartedAt: row.execution_started_at?.toISOString(),
+    executionStartedBy: row.execution_started_by,
     executedAt: row.executed_at?.toISOString(),
     reviewedBy: row.reviewed_by,
     reviewedAt: row.reviewed_at?.toISOString(),
@@ -160,6 +262,8 @@ export function toSummary(record: RebalancePlanRecord): RebalancePlanSummaryReco
     actor: record.actor,
     status: record.status,
     createdAt: record.createdAt,
+    executionStartedAt: record.executionStartedAt,
+    executionStartedBy: record.executionStartedBy,
     executedAt: record.executedAt,
     reviewedBy: record.reviewedBy,
     reviewedAt: record.reviewedAt,

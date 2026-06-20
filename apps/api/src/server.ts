@@ -48,16 +48,19 @@ import {
   previewTopicConfigUpdate,
   produceMessage
 } from "./kafka.js";
-import { buildDiskRebalancePlan, buildRebalancePreflight } from "./rebalance.js";
+import { buildDiskRebalancePlan, buildRebalancePreflight, evaluateRebalanceExecutionCompletion } from "./rebalance.js";
 import {
   getRebalancePlan,
+  listExecutingRebalancePlans,
   listRebalancePlans,
   markRebalancePlanExecuted,
+  markRebalancePlanExecutionStarted,
   markRebalancePlanReviewed,
+  releaseRebalancePlanExecution,
   saveRebalancePlan
 } from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
-import type { ClusterConfig, RebalancePlanRecord } from "./types.js";
+import type { ClusterConfig, RebalanceExecutionStatus, RebalancePlanRecord } from "./types.js";
 
 let clusters: ClusterRecord[] = [];
 const app = Fastify({
@@ -127,6 +130,48 @@ async function buildStoredRebalancePreflight(clusterId: string, storedPlan: Reba
     currentPlacements,
     collectors: collectors.filter((collector) => collector.heartbeat.clusterId === clusterId)
   });
+}
+
+async function reconcileExecutingRebalancePlans(clusterId: string, reassignmentStatus: RebalanceExecutionStatus) {
+  const executingPlans = await listExecutingRebalancePlans(clusterId);
+  if (executingPlans.length === 0 || reassignmentStatus.active) {
+    return [];
+  }
+
+  const currentPlacements = await listPartitionPlacements(getCluster(clusterId), true);
+  const completedPlanIds: string[] = [];
+  for (const storedPlan of executingPlans) {
+    const completion = evaluateRebalanceExecutionCompletion({
+      plan: storedPlan.plan,
+      reassignmentStatus,
+      currentPlacements
+    });
+    if (!completion.complete) {
+      continue;
+    }
+
+    const completed = await markRebalancePlanExecuted(storedPlan.id);
+    if (!completed) {
+      continue;
+    }
+    completedPlanIds.push(storedPlan.id);
+    await recordAudit({
+      actor: "eventhelm-reconciler",
+      action: "rebalance.complete",
+      clusterId,
+      resourceType: "cluster",
+      resourceName: clusterId,
+      details: {
+        planId: storedPlan.id,
+        executionStartedAt: storedPlan.executionStartedAt,
+        executionStartedBy: storedPlan.executionStartedBy,
+        completedAt: completed.executedAt,
+        movements: storedPlan.plan.summary.movements,
+        estimatedBytesMoved: storedPlan.plan.summary.estimatedBytesMoved
+      }
+    });
+  }
+  return completedPlanIds;
 }
 
 const offsetResetRequestSchema = z
@@ -700,7 +745,9 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
 
 app.get("/api/clusters/:clusterId/rebalance/status", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);
-  return describePartitionReassignments(getCluster(params.clusterId));
+  const status = await describePartitionReassignments(getCluster(params.clusterId));
+  await reconcileExecutingRebalancePlans(params.clusterId, status);
+  return status;
 });
 
 app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (request) => {
@@ -715,8 +762,8 @@ app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (requ
   if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
     throw badRequest("Rebalance plan was not found for this cluster.");
   }
-  if (storedPlan.status === "executed") {
-    throw badRequest("Executed rebalance plans cannot be reviewed again.");
+  if (storedPlan.status === "executed" || storedPlan.status === "executing") {
+    throw badRequest("Rebalance plans that are executing or executed cannot be reviewed again.");
   }
 
   const actor = actorFromRequest(request);
@@ -748,8 +795,8 @@ app.post("/api/clusters/:clusterId/rebalance/plans/:planId/reject", async (reque
   if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
     throw badRequest("Rebalance plan was not found for this cluster.");
   }
-  if (storedPlan.status === "executed") {
-    throw badRequest("Executed rebalance plans cannot be reviewed again.");
+  if (storedPlan.status === "executed" || storedPlan.status === "executing") {
+    throw badRequest("Rebalance plans that are executing or executed cannot be reviewed again.");
   }
 
   const actor = actorFromRequest(request);
@@ -789,6 +836,9 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   if (storedPlan.status === "executed") {
     throw badRequest("Rebalance plan has already been executed.");
   }
+  if (storedPlan.status === "executing") {
+    throw badRequest("Rebalance plan is already executing.");
+  }
   if (storedPlan.status !== "approved") {
     throw badRequest("Rebalance plan must be approved before execution.");
   }
@@ -799,23 +849,48 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
     throw badRequest(`Rebalance preflight failed. ${preflight.blockedReasons.join(" ")}`);
   }
 
-  await alterPartitionAssignments(cluster, storedPlan.plan.kafkaJsRequest);
-  await markRebalancePlanExecuted(storedPlan.id);
+  const actor = actorFromRequest(request);
+  const executingPlan = await markRebalancePlanExecutionStarted(storedPlan.id, actor);
+  if (!executingPlan) {
+    throw badRequest("Another rebalance plan is already executing for this cluster, or this plan is no longer approved.");
+  }
+
+  try {
+    await alterPartitionAssignments(cluster, storedPlan.plan.kafkaJsRequest);
+  } catch (caught) {
+    await releaseRebalancePlanExecution(storedPlan.id);
+    await recordAudit({
+      actor,
+      action: "rebalance.execute_failed",
+      clusterId: params.clusterId,
+      resourceType: "cluster",
+      resourceName: params.clusterId,
+      details: {
+        planId: storedPlan.id,
+        movements: storedPlan.plan.summary.movements,
+        error: caught instanceof Error ? caught.message : String(caught)
+      }
+    });
+    throw caught;
+  }
+
   await recordAudit({
-    actor: actorFromRequest(request),
+    actor,
     action: "rebalance.execute",
     clusterId: params.clusterId,
     resourceType: "cluster",
     resourceName: params.clusterId,
     details: {
       planId: storedPlan.id,
+      status: "executing",
+      executionStartedAt: executingPlan.executionStartedAt,
       topics: storedPlan.plan.kafkaJsRequest.length,
       movements: storedPlan.plan.summary.movements,
       estimatedBytesMoved: storedPlan.plan.summary.estimatedBytesMoved
     }
   });
 
-  return { accepted: true, planId: storedPlan.id };
+  return { accepted: true, planId: storedPlan.id, status: "executing", executionStartedAt: executingPlan.executionStartedAt };
 });
 
 app.get("/api/collectors", async () => listCollectors());

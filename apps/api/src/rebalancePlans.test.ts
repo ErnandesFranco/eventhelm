@@ -4,7 +4,9 @@ import {
   getRebalancePlan,
   listRebalancePlans,
   markRebalancePlanExecuted,
+  markRebalancePlanExecutionStarted,
   markRebalancePlanReviewed,
+  releaseRebalancePlanExecution,
   saveRebalancePlan
 } from "./rebalancePlans.js";
 import type { RebalancePlan } from "./types.js";
@@ -26,10 +28,32 @@ test("rebalance plan history lists summaries and preserves full plan lookup", as
   assert.equal(approved?.reviewedBy, "reviewer-a");
   assert.equal(approved?.reviewComment, "looks balanced");
 
-  await markRebalancePlanExecuted(plan.id);
+  const executing = await markRebalancePlanExecutionStarted(plan.id, "operator-a");
+  assert.equal(executing?.status, "executing");
+  assert.equal(executing?.executionStartedBy, "operator-a");
+  assert.equal(typeof executing?.executionStartedAt, "string");
+
+  const concurrentPlan = rebalancePlan("history-plan-concurrent");
+  await saveRebalancePlan(concurrentPlan, "history-test");
+  await markRebalancePlanReviewed(concurrentPlan.id, "approved", "reviewer-a");
+  const blockedConcurrentExecution = await markRebalancePlanExecutionStarted(concurrentPlan.id, "operator-b");
+  assert.equal(blockedConcurrentExecution, undefined);
+
+  await releaseRebalancePlanExecution(plan.id);
+  const released = await getRebalancePlan(plan.id);
+  assert.equal(released?.status, "approved");
+  assert.equal(released?.executionStartedAt, undefined);
+
+  const executingAgain = await markRebalancePlanExecutionStarted(plan.id, "operator-a");
+  assert.equal(executingAgain?.status, "executing");
+
+  const completed = await markRebalancePlanExecuted(plan.id);
+  assert.equal(completed?.status, "executed");
   const executed = await listRebalancePlans("history-cluster", 10);
-  assert.equal(executed[0]?.status, "executed");
-  assert.equal(typeof executed[0]?.executedAt, "string");
+  const executedPlan = executed.find((record) => record.id === plan.id);
+  assert.equal(executedPlan?.status, "executed");
+  assert.equal(typeof executedPlan?.executionStartedAt, "string");
+  assert.equal(typeof executedPlan?.executedAt, "string");
 
   const rejectedPlan = rebalancePlan("history-plan-b");
   await saveRebalancePlan(rejectedPlan, "history-test");
