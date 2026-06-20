@@ -49,14 +49,29 @@ function toKafkaSasl(sasl: ClusterConfig["sasl"]) {
     return undefined;
   }
 
+  const password = resolveSaslPassword(sasl);
   switch (sasl.mechanism) {
     case "plain":
-      return { mechanism: "plain" as const, username: sasl.username, password: sasl.password };
+      return { mechanism: "plain" as const, username: sasl.username, password };
     case "scram-sha-256":
-      return { mechanism: "scram-sha-256" as const, username: sasl.username, password: sasl.password };
+      return { mechanism: "scram-sha-256" as const, username: sasl.username, password };
     case "scram-sha-512":
-      return { mechanism: "scram-sha-512" as const, username: sasl.username, password: sasl.password };
+      return { mechanism: "scram-sha-512" as const, username: sasl.username, password };
   }
+}
+
+function resolveSaslPassword(sasl: NonNullable<ClusterConfig["sasl"]>) {
+  if (sasl.password) {
+    return sasl.password;
+  }
+  if (sasl.passwordEnv) {
+    const password = process.env[sasl.passwordEnv];
+    if (password) {
+      return password;
+    }
+    throw new Error(`SASL password environment variable '${sasl.passwordEnv}' is not set.`);
+  }
+  throw new Error("SASL password is not configured.");
 }
 
 export async function describeCluster(cluster: ClusterConfig) {

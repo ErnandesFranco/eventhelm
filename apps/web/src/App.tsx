@@ -2057,8 +2057,10 @@ type ClusterFormState = {
   ssl: boolean;
   saslEnabled: boolean;
   mechanism: ClusterSaslMechanism;
+  passwordMode: "inline" | "environment";
   username: string;
   password: string;
+  passwordEnv: string;
 };
 
 const saslMechanisms: ClusterSaslMechanism[] = ["plain", "scram-sha-256", "scram-sha-512"];
@@ -2071,8 +2073,10 @@ function createEmptyClusterForm(): ClusterFormState {
     ssl: false,
     saslEnabled: false,
     mechanism: "plain",
+    passwordMode: "inline",
     username: "",
-    password: ""
+    password: "",
+    passwordEnv: ""
   };
 }
 
@@ -2126,8 +2130,16 @@ function ClustersView({
       setLocalError("At least one broker address is required.");
       return;
     }
-    if (form.saslEnabled && (!form.username.trim() || !form.password)) {
-      setLocalError("SASL username and password are required.");
+    if (form.saslEnabled && !form.username.trim()) {
+      setLocalError("SASL username is required.");
+      return;
+    }
+    if (form.saslEnabled && form.passwordMode === "inline" && !form.password) {
+      setLocalError("SASL password is required.");
+      return;
+    }
+    if (form.saslEnabled && form.passwordMode === "environment" && !form.passwordEnv.trim()) {
+      setLocalError("SASL password env var is required.");
       return;
     }
 
@@ -2142,7 +2154,8 @@ function ClustersView({
           ? {
               mechanism: form.mechanism,
               username: form.username.trim(),
-              password: form.password
+              password: form.passwordMode === "inline" ? form.password : undefined,
+              passwordEnv: form.passwordMode === "environment" ? form.passwordEnv.trim() : undefined
             }
           : undefined
       };
@@ -2242,7 +2255,11 @@ function ClustersView({
                       {cluster.ssl ? "TLS" : "Plain"}
                     </StatusPill>
                     <StatusPill tone={cluster.saslConfigured ? "good" : "neutral"} icon={KeyRound}>
-                      {cluster.saslConfigured ? "SASL" : "No SASL"}
+                      {cluster.saslConfigured
+                        ? cluster.saslPasswordSource === "environment"
+                          ? "SASL env"
+                          : "SASL"
+                        : "No SASL"}
                     </StatusPill>
                   </span>
                   <span>{cluster.updatedAt ? formatDateTime(cluster.updatedAt) : cluster.createdAt ? formatDateTime(cluster.createdAt) : "boot"}</span>
@@ -2325,15 +2342,36 @@ function ClustersView({
                     Username
                     <input value={form.username} onChange={(event) => updateForm({ username: event.target.value })} />
                   </label>
-                  <label className="fieldSpanFull">
-                    Password
-                    <input
-                      type="password"
-                      value={form.password}
-                      onChange={(event) => updateForm({ password: event.target.value })}
-                      autoComplete="new-password"
-                    />
+                  <label>
+                    Secret source
+                    <select
+                      value={form.passwordMode}
+                      onChange={(event) => updateForm({ passwordMode: event.target.value as ClusterFormState["passwordMode"] })}
+                    >
+                      <option value="inline">Inline password</option>
+                      <option value="environment">Environment variable</option>
+                    </select>
                   </label>
+                  {form.passwordMode === "inline" ? (
+                    <label className="fieldSpanFull">
+                      Password
+                      <input
+                        type="password"
+                        value={form.password}
+                        onChange={(event) => updateForm({ password: event.target.value })}
+                        autoComplete="new-password"
+                      />
+                    </label>
+                  ) : (
+                    <label className="fieldSpanFull">
+                      Password env var
+                      <input
+                        value={form.passwordEnv}
+                        onChange={(event) => updateForm({ passwordEnv: event.target.value })}
+                        placeholder="EVENTHELM_KAFKA_PASSWORD"
+                      />
+                    </label>
+                  )}
                 </>
               ) : (
                 <div className="clusterSecurityPlaceholder fieldSpanFull">

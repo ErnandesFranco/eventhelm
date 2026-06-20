@@ -4,6 +4,7 @@ export type Cluster = {
   brokers: string[];
   ssl?: boolean;
   saslConfigured?: boolean;
+  saslPasswordSource?: "inline" | "environment";
   source?: "environment" | "api";
   createdAt?: string;
   updatedAt?: string;
@@ -17,7 +18,8 @@ export type ClusterRegistration = {
   sasl?: {
     mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
     username: string;
-    password: string;
+    password?: string;
+    passwordEnv?: string;
   };
 };
 

@@ -10,8 +10,10 @@ export const clusterSchema = z.object({
     .object({
       mechanism: z.enum(["plain", "scram-sha-256", "scram-sha-512"]),
       username: z.string(),
-      password: z.string()
+      password: z.string().optional(),
+      passwordEnv: z.string().min(1).optional()
     })
+    .refine((sasl) => Boolean(sasl.password || sasl.passwordEnv), "SASL requires password or passwordEnv")
     .optional()
 });
 

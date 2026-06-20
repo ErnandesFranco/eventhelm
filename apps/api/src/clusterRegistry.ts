@@ -15,6 +15,7 @@ export type PublicCluster = {
   brokers: string[];
   ssl?: boolean;
   saslConfigured: boolean;
+  saslPasswordSource?: "inline" | "environment";
   source: ClusterSource;
   createdAt?: string;
   updatedAt?: string;
@@ -115,6 +116,7 @@ export function toPublicCluster(cluster: ClusterConfig | ClusterRecord): PublicC
     brokers: cluster.brokers,
     ssl: cluster.ssl,
     saslConfigured: Boolean(cluster.sasl),
+    saslPasswordSource: cluster.sasl ? saslPasswordSource(cluster.sasl) : undefined,
     source: record.source ?? "environment",
     createdAt: record.createdAt,
     updatedAt: record.updatedAt
@@ -127,8 +129,13 @@ export function sanitizeClusterConfig(cluster: ClusterConfig) {
     name: cluster.name,
     brokers: cluster.brokers,
     ssl: cluster.ssl ?? false,
-    saslConfigured: Boolean(cluster.sasl)
+    saslConfigured: Boolean(cluster.sasl),
+    saslPasswordSource: cluster.sasl ? saslPasswordSource(cluster.sasl) : undefined
   };
+}
+
+function saslPasswordSource(sasl: NonNullable<ClusterConfig["sasl"]>): "inline" | "environment" {
+  return sasl.passwordEnv ? "environment" : "inline";
 }
 
 function rowToClusterRecord(row: ClusterRow): ClusterRecord {

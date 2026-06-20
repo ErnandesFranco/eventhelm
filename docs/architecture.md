@@ -81,7 +81,7 @@ Each sweep is stored as an `agent_runs` record with a durable run ID, actor, tri
 
 ### Cluster Registry
 
-Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. API writes and the console Clusters view can register or update clusters with explicit write confirmation. Public cluster responses and audit details expose connection metadata without leaking SASL passwords; production deployments still need external secret references and RBAC before multi-team use.
+Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. API writes and the console Clusters view can register or update clusters with explicit write confirmation. SASL credentials can use an inline password for local use or `passwordEnv` for an API-process environment variable reference. Public cluster responses and audit details expose connection metadata without leaking SASL passwords or secret reference names; production deployments still need a full external secret manager and RBAC before multi-team use.
 
 ### Disk-Aware Rebalance
 

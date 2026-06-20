@@ -6,7 +6,8 @@ export type ClusterConfig = {
   sasl?: {
     mechanism: "plain" | "scram-sha-256" | "scram-sha-512";
     username: string;
-    password: string;
+    password?: string;
+    passwordEnv?: string;
   };
 };
 
