@@ -26,7 +26,7 @@ The API owns:
 - Advisor-agent checks.
 - Security posture reporting.
 - Audit events.
-- Postgres persistence for audit events and collector state.
+- Postgres persistence for audit events, collector state, rebalance plans, advisor-agent runs, and findings.
 - Later: RBAC, policy checks, approval workflows.
 
 ### Web Console
@@ -67,6 +67,8 @@ Current agents:
 - Scribe: project maintainability.
 
 Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
+
+Each sweep is stored as an `agent_runs` record with a durable run ID, actor, trigger, severity summary, per-agent scores, and the full run payload. Individual findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
 
 ### Disk-Aware Rebalance
 
@@ -129,7 +131,7 @@ flowchart LR
 
 ## Near-Term Roadmap
 
-1. Persist configured clusters, agent runs, findings, and executed rebalance history in Postgres.
+1. Persist configured clusters and add migration versioning for control-plane state.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add approval queues for offset resets, topic config changes, topic mutations, and rebalance execution.

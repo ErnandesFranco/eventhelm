@@ -15,7 +15,8 @@ npm run compose:up
 
 The project currently needs help with:
 
-- Postgres persistence for configured clusters, agent runs, findings, and executed rebalance history.
+- Postgres persistence for configured clusters and production deployment metadata.
+- Versioned database migrations and retention policies for persisted control-plane state.
 - Approval queues for safe mutation workflows.
 - OIDC/RBAC and policy checks.
 - Collector JMX metrics.

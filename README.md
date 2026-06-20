@@ -8,7 +8,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 
 - A TypeScript API that connects to Kafka through KafkaJS.
 - A React console for command overview, live topology, topics, records, consumer groups, collectors, audit, and advisor agents.
-- Postgres persistence for audit events and broker collector state.
+- Postgres persistence for audit events, broker collector state, rebalance plans, and advisor-agent run history.
 - One broker-local collector per broker in the Docker lab.
 - Topic configuration inspection and reviewed updates for common mutable topic configs.
 - Disk-aware partition rebalance planning from broker collector telemetry.
@@ -57,7 +57,11 @@ Current routes:
 
 - `GET /api/agents`
 - `GET /api/clusters/:clusterId/agents`
+- `GET /api/clusters/:clusterId/agents/runs`
+- `GET /api/clusters/:clusterId/agents/runs/:runId`
 - `POST /api/clusters/:clusterId/agents/run`
+
+Every sweep returns a durable run ID, severity summary, per-agent scores, and finding evidence. In Postgres mode, runs are stored in `agent_runs` and findings are indexed in `agent_findings` so operators can review posture drift over time.
 
 ## Consumer Lag
 
@@ -108,7 +112,7 @@ Current protections:
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
-- Audit and collector state are persisted in Postgres in the Docker lab.
+- Audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
 - Mutating requests support explicit confirmation headers.
 - Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
@@ -131,6 +135,16 @@ cp .env.example .env
 npm install
 npm run dev
 ```
+
+## Project Gates
+
+The GitHub Actions workflow runs on pushes to `main` and all pull requests:
+
+- `npm ci`
+- `npm test`
+- `npm run typecheck --workspaces`
+- `npm run build --workspaces`
+- `docker compose config --quiet`
 
 ## Project Layout
 

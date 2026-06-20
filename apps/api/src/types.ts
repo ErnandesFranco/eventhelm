@@ -269,6 +269,7 @@ export type SecurityStatus = {
 };
 
 export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";
+export type AgentRunTrigger = "automatic" | "manual";
 
 export type AdvisorAgent = {
   id: string;
@@ -289,9 +290,23 @@ export type AgentFinding = {
   resourceName?: string;
 };
 
+export type AgentRunSummary = {
+  score: number;
+  findings: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+};
+
 export type AgentRun = {
+  id: string;
   clusterId: string;
   generatedAt: string;
+  actor?: string;
+  trigger?: AgentRunTrigger;
+  summary: AgentRunSummary;
   agents: Array<
     AdvisorAgent & {
       findings: AgentFinding[];
@@ -299,4 +314,15 @@ export type AgentRun = {
     }
   >;
   findings: AgentFinding[];
+};
+
+export type AgentRunRecord = {
+  id: string;
+  clusterId: string;
+  actor: string;
+  trigger: AgentRunTrigger;
+  generatedAt: string;
+  createdAt: string;
+  summary: AgentRunSummary;
+  findingsPreview: AgentFinding[];
 };

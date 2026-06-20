@@ -1,6 +1,9 @@
+import { nanoid } from "nanoid";
 import type {
   AdvisorAgent,
   AgentFinding,
+  AgentRunSummary,
+  AgentRunTrigger,
   AgentRun,
   AuditEvent,
   CollectorState,
@@ -18,6 +21,11 @@ type AgentContext = {
   auditEvents: AuditEvent[];
   security: SecurityStatus;
   persistenceMode: "postgres" | "memory";
+};
+
+type AgentRunOptions = {
+  actor?: string;
+  trigger?: AgentRunTrigger;
 };
 
 const advisorAgents: AdvisorAgent[] = [
@@ -62,7 +70,7 @@ export function listAdvisorAgents(): AdvisorAgent[] {
   return advisorAgents;
 }
 
-export function runAdvisorAgents(context: AgentContext): AgentRun {
+export function runAdvisorAgents(context: AgentContext, options: AgentRunOptions = {}): AgentRun {
   const findings = [
     ...runNavigator(context),
     ...runSentinel(context),
@@ -71,18 +79,25 @@ export function runAdvisorAgents(context: AgentContext): AgentRun {
     ...runScribe(context)
   ];
 
+  const sortedFindings = findings.sort((left, right) => severityRank(right.severity) - severityRank(left.severity));
+  const agents = advisorAgents.map((agent) => {
+    const agentFindings = sortedFindings.filter((finding) => finding.agentId === agent.id);
+    return {
+      ...agent,
+      findings: agentFindings,
+      score: scoreFindings(agentFindings)
+    };
+  });
+
   return {
+    id: nanoid(),
     clusterId: context.clusterId,
     generatedAt: new Date().toISOString(),
-    agents: advisorAgents.map((agent) => {
-      const agentFindings = findings.filter((finding) => finding.agentId === agent.id);
-      return {
-        ...agent,
-        findings: agentFindings,
-        score: scoreFindings(agentFindings)
-      };
-    }),
-    findings: findings.sort((left, right) => severityRank(right.severity) - severityRank(left.severity))
+    actor: options.actor,
+    trigger: options.trigger,
+    summary: summarizeFindings(sortedFindings, agents.map((agent) => agent.score)),
+    agents,
+    findings: sortedFindings
   };
 }
 
@@ -371,6 +386,24 @@ function finding(
 function scoreFindings(findings: AgentFinding[]): number {
   const penalty = findings.reduce((total, finding) => total + severityPenalty(finding.severity), 0);
   return Math.max(0, 100 - penalty);
+}
+
+function summarizeFindings(findings: AgentFinding[], scores: number[]): AgentRunSummary {
+  const summary: AgentRunSummary = {
+    score: scores.length ? Math.round(scores.reduce((total, score) => total + score, 0) / scores.length) : 100,
+    findings: findings.length,
+    critical: 0,
+    high: 0,
+    medium: 0,
+    low: 0,
+    info: 0
+  };
+
+  for (const finding of findings) {
+    summary[finding.severity] += 1;
+  }
+
+  return summary;
 }
 
 function severityRank(severity: AgentFinding["severity"]): number {

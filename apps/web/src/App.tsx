@@ -37,6 +37,7 @@ import type {
   AdvisorAgent,
   AgentFinding,
   AgentRun,
+  AgentRunRecord,
   AuditEvent,
   Cluster,
   CollectorState,
@@ -79,6 +80,7 @@ export function App() {
   const [audit, setAudit] = useState<AuditEvent[]>([]);
   const [messages, setMessages] = useState<MessageRecord[]>([]);
   const [agentRun, setAgentRun] = useState<AgentRun | null>(null);
+  const [agentHistory, setAgentHistory] = useState<AgentRunRecord[]>([]);
   const [security, setSecurity] = useState<SecurityStatus | null>(null);
   const [selectedTopic, setSelectedTopic] = useState("");
   const [messageLimit, setMessageLimit] = useState(25);
@@ -104,21 +106,22 @@ export function App() {
         return;
       }
       setSelectedClusterId(nextClusterId);
-      const [loadedOverview, loadedTopics, loadedGroups, loadedCollectors, loadedAudit, loadedAgents] =
-        await Promise.all([
-          api.overview(nextClusterId),
-          api.topics(nextClusterId),
-          api.consumerGroups(nextClusterId),
-          api.collectors(),
-          api.audit(),
-          api.agents(nextClusterId)
-        ]);
+      const [loadedOverview, loadedTopics, loadedGroups, loadedCollectors, loadedAudit] = await Promise.all([
+        api.overview(nextClusterId),
+        api.topics(nextClusterId),
+        api.consumerGroups(nextClusterId),
+        api.collectors(),
+        api.audit()
+      ]);
+      const loadedAgents = await api.agents(nextClusterId);
+      const loadedAgentHistory = await api.agentRuns(nextClusterId);
       setOverview(loadedOverview);
       setTopics(loadedTopics);
       setGroups(loadedGroups);
       setCollectors(loadedCollectors);
       setAudit(loadedAudit);
       setAgentRun(loadedAgents);
+      setAgentHistory(loadedAgentHistory);
       setSelectedTopic((current) => current || loadedTopics.find((topic) => !topic.isInternal)?.name || loadedTopics[0]?.name || "");
       setLastRefreshed(new Date());
     } catch (caught) {
@@ -148,6 +151,7 @@ export function App() {
     setError(null);
     try {
       setAgentRun(await api.runAgents(selectedClusterId));
+      setAgentHistory(await api.agentRuns(selectedClusterId));
       setAudit(await api.audit());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -237,7 +241,9 @@ export function App() {
         {!loading && activeTab === "command" && overview ? (
           <CommandCenter overview={overview} agentRun={agentRun} audit={audit} security={security} onRunAgents={runAgents} />
         ) : null}
-        {!loading && activeTab === "agents" && agentRun ? <AgentsView agentRun={agentRun} onRunAgents={runAgents} /> : null}
+        {!loading && activeTab === "agents" && agentRun ? (
+          <AgentsView agentRun={agentRun} history={agentHistory} onRunAgents={runAgents} />
+        ) : null}
         {!loading && activeTab === "rebalance" && overview ? (
           <RebalanceView clusterId={selectedClusterId} overview={overview} onAuditChanged={() => api.audit().then(setAudit)} />
         ) : null}
@@ -526,19 +532,51 @@ function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
   );
 }
 
-function AgentsView({ agentRun, onRunAgents }: { agentRun: AgentRun; onRunAgents: () => Promise<void> }) {
+function AgentsView({
+  agentRun,
+  history,
+  onRunAgents
+}: {
+  agentRun: AgentRun;
+  history: AgentRunRecord[];
+  onRunAgents: () => Promise<void>;
+}) {
+  const highestFinding = agentRun.findings[0];
+
   return (
     <div className="viewStack">
       <div className="viewHeader">
         <div>
           <h2>Advisor Agents</h2>
-          <p>Policy checks against live cluster, collector, security, and governance state.</p>
+          <p>
+            Last sweep {formatAge(agentRun.generatedAt)} by {agentRun.actor ?? "system"} across live cluster, collector,
+            security, and governance state.
+          </p>
         </div>
         <button className="primaryButton" type="button" onClick={() => void onRunAgents()}>
           <Activity size={17} />
           Run checks
         </button>
       </div>
+
+      <section className="agentRunStrip" aria-label="Advisor run summary">
+        <div>
+          <span>Posture score</span>
+          <strong>{agentRun.summary.score}</strong>
+        </div>
+        <div>
+          <span>Open findings</span>
+          <strong>{agentRun.summary.findings}</strong>
+        </div>
+        <div>
+          <span>High priority</span>
+          <strong>{agentRun.summary.critical + agentRun.summary.high}</strong>
+        </div>
+        <div>
+          <span>Top evidence</span>
+          <strong>{highestFinding?.title ?? "Clear"}</strong>
+        </div>
+      </section>
 
       <div className="agentBoard">
         {agentRun.agents.map((agent) => (
@@ -549,6 +587,11 @@ function AgentsView({ agentRun, onRunAgents }: { agentRun: AgentRun; onRunAgents
       <section className="surface">
         <SurfaceHeader icon={ShieldAlert} title="Open Findings" meta={`${agentRun.findings.length} findings`} />
         <FindingTable findings={agentRun.findings} />
+      </section>
+
+      <section className="surface">
+        <SurfaceHeader icon={FileClock} title="Run History" meta={`${history.length} retained`} />
+        <AgentRunHistory history={history} />
       </section>
     </div>
   );
@@ -1891,6 +1934,7 @@ function FindingTable({ findings }: { findings: AgentFinding[] }) {
         <span>Severity</span>
         <span>Agent</span>
         <span>Finding</span>
+        <span>Resource</span>
         <span>Recommendation</span>
       </div>
       {findings.map((finding) => (
@@ -1901,9 +1945,63 @@ function FindingTable({ findings }: { findings: AgentFinding[] }) {
             <strong>{finding.title}</strong>
             <small>{finding.summary}</small>
           </span>
+          <span>
+            <strong>{finding.resourceName ?? finding.resourceType ?? "platform"}</strong>
+            <small>{finding.resourceType ?? "control plane"}</small>
+          </span>
           <span>{finding.recommendation}</span>
         </div>
       ))}
+    </DataTable>
+  );
+}
+
+function AgentRunHistory({ history }: { history: AgentRunRecord[] }) {
+  if (history.length === 0) {
+    return <EmptyState title="No advisor runs retained yet" />;
+  }
+
+  return (
+    <DataTable className="runHistoryTable">
+      <div className="tableRow tableHead">
+        <span>Time</span>
+        <span>Trigger</span>
+        <span>Actor</span>
+        <span>Score</span>
+        <span>Findings</span>
+        <span>Top evidence</span>
+      </div>
+      {history.map((run) => {
+        const topFinding = run.findingsPreview[0];
+        return (
+          <div className="tableRow" key={run.id}>
+            <span>
+              <strong>{formatDateTime(run.generatedAt)}</strong>
+              <small className="mono">{run.id.slice(0, 8)}</small>
+            </span>
+            <span>{run.trigger}</span>
+            <span className="mono">{run.actor}</span>
+            <span className={`scoreBadge ${scoreTone(run.summary.score)}`}>{run.summary.score}</span>
+            <span>
+              <strong>{run.summary.findings}</strong>
+              <small>
+                {run.summary.critical} critical, {run.summary.high} high
+              </small>
+            </span>
+            <span>
+              {topFinding ? (
+                <>
+                  <Severity severity={topFinding.severity} />
+                  <strong>{topFinding.title}</strong>
+                  <small>{topFinding.resourceName ?? topFinding.resourceType ?? "platform"}</small>
+                </>
+              ) : (
+                <strong>Clear</strong>
+              )}
+            </span>
+          </div>
+        );
+      })}
     </DataTable>
   );
 }
@@ -2040,6 +2138,15 @@ function formatAge(iso: string) {
     return `${seconds}s ago`;
   }
   return `${Math.round(seconds / 60)}m ago`;
+}
+
+function formatDateTime(iso: string) {
+  return new Intl.DateTimeFormat(undefined, {
+    month: "short",
+    day: "numeric",
+    hour: "2-digit",
+    minute: "2-digit"
+  }).format(new Date(iso));
 }
 
 function prettyJson(value?: string) {

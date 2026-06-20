@@ -205,6 +205,7 @@ export type SecurityStatus = {
 };
 
 export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";
+export type AgentRunTrigger = "automatic" | "manual";
 
 export type AdvisorAgent = {
   id: string;
@@ -227,11 +228,36 @@ export type AgentFinding = {
   resourceName?: string;
 };
 
+export type AgentRunSummary = {
+  score: number;
+  findings: number;
+  critical: number;
+  high: number;
+  medium: number;
+  low: number;
+  info: number;
+};
+
 export type AgentRun = {
+  id: string;
   clusterId: string;
   generatedAt: string;
+  actor?: string;
+  trigger?: AgentRunTrigger;
+  summary: AgentRunSummary;
   agents: AdvisorAgent[];
   findings: AgentFinding[];
+};
+
+export type AgentRunRecord = {
+  id: string;
+  clusterId: string;
+  actor: string;
+  trigger: AgentRunTrigger;
+  generatedAt: string;
+  createdAt: string;
+  summary: AgentRunSummary;
+  findingsPreview: AgentFinding[];
 };
 
 export type RebalancePlan = {
@@ -366,6 +392,10 @@ export const api = {
   collectors: () => request<CollectorState[]>("/api/collectors"),
   audit: () => request<AuditEvent[]>("/api/audit"),
   agents: (clusterId: string) => request<AgentRun>(`/api/clusters/${clusterId}/agents`),
+  agentRuns: (clusterId: string, limit = 12) =>
+    request<AgentRunRecord[]>(`/api/clusters/${clusterId}/agents/runs?limit=${limit}`),
+  agentRun: (clusterId: string, runId: string) =>
+    request<AgentRun>(`/api/clusters/${clusterId}/agents/runs/${encodeURIComponent(runId)}`),
   runAgents: (clusterId: string) =>
     request<AgentRun>(`/api/clusters/${clusterId}/agents/run`, {
       method: "POST",

@@ -1,6 +1,7 @@
 import cors from "@fastify/cors";
 import Fastify from "fastify";
 import { z } from "zod";
+import { getAgentRun, listAgentRuns, saveAgentRun } from "./agentRuns.js";
 import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
@@ -528,26 +529,49 @@ app.get("/api/audit", async () => listAuditEvents());
 
 app.get("/api/agents", async () => listAdvisorAgents());
 
+app.get("/api/clusters/:clusterId/agents/runs", async (request) => {
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  getCluster(params.clusterId);
+  const query = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(100).default(25)
+    })
+    .parse(request.query);
+  return listAgentRuns(params.clusterId, query.limit);
+});
+
+app.get("/api/clusters/:clusterId/agents/runs/:runId", async (request) => {
+  const params = z.object({ clusterId: z.string(), runId: z.string().min(1) }).parse(request.params);
+  getCluster(params.clusterId);
+  const run = await getAgentRun(params.runId);
+  if (!run || run.clusterId !== params.clusterId) {
+    throw badRequest("Agent run was not found for this cluster.");
+  }
+  return run;
+});
+
 app.get("/api/clusters/:clusterId/agents", async (request) => {
   const params = z.object({ clusterId: z.string() }).parse(request.params);
-  return buildAgentRun(params.clusterId);
+  return buildAgentRun(params.clusterId, "system", "automatic");
 });
 
 app.post("/api/clusters/:clusterId/agents/run", async (request) => {
   assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string() }).parse(request.params);
-  const run = await buildAgentRun(params.clusterId);
+  const actor = actorFromRequest(request);
+  const run = await buildAgentRun(params.clusterId, actor, "manual");
   await recordAudit({
-    actor: actorFromRequest(request),
+    actor,
     action: "agents.run",
     clusterId: params.clusterId,
     resourceType: "agent",
-    details: { findingCount: run.findings.length }
+    resourceName: run.id,
+    details: { runId: run.id, findingCount: run.findings.length, summary: run.summary }
   });
   return run;
 });
 
-async function buildAgentRun(clusterId: string) {
+async function buildAgentRun(clusterId: string, actor: string, trigger: "automatic" | "manual") {
   const cluster = getCluster(clusterId);
   const [description, topics, consumerGroups] = await Promise.all([
     describeCluster(cluster),
@@ -555,16 +579,23 @@ async function buildAgentRun(clusterId: string) {
     listConsumerGroups(cluster)
   ]);
 
-  return runAdvisorAgents({
-    clusterId,
-    brokerCount: description.brokers.length,
-    topics,
-    consumerGroups,
-    collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
-    auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
-    security: getSecurityStatus(),
-    persistenceMode: persistenceMode()
-  });
+  return saveAgentRun(
+    runAdvisorAgents(
+      {
+        clusterId,
+        brokerCount: description.brokers.length,
+        topics,
+        consumerGroups,
+        collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
+        auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
+        security: getSecurityStatus(),
+        persistenceMode: persistenceMode()
+      },
+      { actor, trigger }
+    ),
+    actor,
+    trigger
+  );
 }
 
 const port = getPort();

@@ -63,6 +63,36 @@ export async function initDatabase() {
     create index if not exists rebalance_plans_cluster_id_idx on rebalance_plans (cluster_id);
     create index if not exists rebalance_plans_created_at_idx on rebalance_plans (created_at desc);
     create index if not exists rebalance_plans_status_idx on rebalance_plans (status);
+
+    create table if not exists agent_runs (
+      id text primary key,
+      cluster_id text not null,
+      actor text not null,
+      trigger text not null,
+      run jsonb not null,
+      summary jsonb not null,
+      generated_at timestamptz not null,
+      created_at timestamptz not null default now()
+    );
+
+    create index if not exists agent_runs_cluster_id_created_at_idx on agent_runs (cluster_id, created_at desc);
+    create index if not exists agent_runs_trigger_idx on agent_runs (trigger);
+
+    create table if not exists agent_findings (
+      id text primary key,
+      run_id text not null references agent_runs(id) on delete cascade,
+      cluster_id text not null,
+      agent_id text not null,
+      severity text not null,
+      resource_type text,
+      resource_name text,
+      finding jsonb not null,
+      created_at timestamptz not null default now()
+    );
+
+    create index if not exists agent_findings_run_id_idx on agent_findings (run_id);
+    create index if not exists agent_findings_cluster_severity_idx on agent_findings (cluster_id, severity);
+    create index if not exists agent_findings_resource_idx on agent_findings (resource_type, resource_name);
   `);
 }
 

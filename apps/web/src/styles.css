@@ -1126,6 +1126,45 @@ label {
   gap: 12px;
 }
 
+.agentRunStrip {
+  display: grid;
+  grid-template-columns: 150px 150px 150px minmax(260px, 1fr);
+  gap: 1px;
+  overflow: hidden;
+  background: var(--line);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+
+.agentRunStrip > div {
+  min-width: 0;
+  min-height: 78px;
+  display: grid;
+  align-content: center;
+  gap: 7px;
+  background: var(--panel);
+  padding: 14px 16px;
+}
+
+.agentRunStrip span {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 820;
+  text-transform: uppercase;
+}
+
+.agentRunStrip strong {
+  overflow: hidden;
+  font-size: 1.4rem;
+  line-height: 1.08;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.agentRunStrip > div:last-child strong {
+  font-size: 1rem;
+}
+
 .agentPanel {
   min-height: 232px;
   display: grid;
@@ -1315,7 +1354,11 @@ label {
 }
 
 .findingTable .tableRow {
-  grid-template-columns: 100px 130px minmax(260px, 1.2fr) minmax(320px, 1.7fr);
+  grid-template-columns: 100px 130px minmax(250px, 1.2fr) minmax(180px, 0.8fr) minmax(320px, 1.6fr);
+}
+
+.runHistoryTable .tableRow {
+  grid-template-columns: 190px 110px 150px 90px 130px minmax(340px, 1.6fr);
 }
 
 .movementTable .tableRow {
@@ -1736,7 +1779,8 @@ label {
 .findingList strong,
 .timeline strong,
 .timeline span,
-.findingTable small {
+.findingTable small,
+.runHistoryTable small {
   display: block;
 }
 
@@ -1746,9 +1790,14 @@ label {
 }
 
 .timeline span,
-.findingTable small {
+.findingTable small,
+.runHistoryTable small {
   color: var(--muted);
   margin-top: 3px;
+}
+
+.runHistoryTable .severity {
+  margin-right: 8px;
 }
 
 .severity {
@@ -1852,7 +1901,8 @@ label {
   }
 
   .metricStrip,
-  .agentBoard {
+  .agentBoard,
+  .agentRunStrip {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
@@ -1914,6 +1964,7 @@ label {
   .navGroups,
   .metricStrip,
   .agentBoard,
+  .agentRunStrip,
   .rebalanceControlGrid,
   .brokerPressureGrid,
   .offsetResetControls,
