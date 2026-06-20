@@ -1,0 +1,23 @@
+{
+  "name": "open-kafka-control-plane",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Open-source Kafka control plane with broker-local collectors.",
+  "workspaces": [
+    "apps/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "typecheck": "npm run typecheck --workspaces",
+    "dev": "concurrently -k -n api,web -c cyan,green \"npm run dev --workspace @okcp/api\" \"npm run dev --workspace @okcp/web\"",
+    "compose:up": "docker compose up --build",
+    "compose:down": "docker compose down -v",
+    "compose:logs": "docker compose logs -f api web collector-1 collector-2 collector-3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
