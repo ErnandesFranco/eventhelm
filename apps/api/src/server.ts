@@ -6,6 +6,7 @@ import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import {
   clusterChangeReviewStateDrift,
+  clusterSecretPolicyViolation,
   createClusterChangeReview,
   deleteClusterConfig,
   getClusterChangeReview,
@@ -56,7 +57,7 @@ import {
   saveRebalancePlan
 } from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
-import type { RebalancePlanRecord } from "./types.js";
+import type { ClusterConfig, RebalancePlanRecord } from "./types.js";
 
 let clusters: ClusterRecord[] = [];
 const app = Fastify({
@@ -103,6 +104,13 @@ function assertClusterBreakglassAllowed(request: Parameters<typeof assertWriteAl
     throw forbidden("Direct cluster registry mutation is disabled. Use cluster change reviews or enable EVENTHELM_ENABLE_CLUSTER_BREAKGLASS=true.");
   }
   assertWriteAllowed(request, "cluster:breakglass");
+}
+
+function assertClusterSecretPolicy(cluster: ClusterConfig) {
+  const violation = clusterSecretPolicyViolation(cluster, getSecurityStatus().authMode);
+  if (violation) {
+    throw badRequest(violation);
+  }
 }
 
 async function buildStoredRebalancePreflight(clusterId: string, storedPlan: RebalancePlanRecord) {
@@ -202,6 +210,9 @@ app.post("/api/clusters/reviews", async (request) => {
       })
     ])
     .parse(request.body);
+  if (body.action === "upsert") {
+    assertClusterSecretPolicy(body.cluster);
+  }
   const actor = actorFromRequest(request);
   const review = await createClusterChangeReview(body, actor, clusters);
   await recordAudit({
@@ -338,6 +349,7 @@ app.post("/api/clusters", async (request) => {
       id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "Cluster IDs must be lowercase alphanumeric slugs.")
     })
     .parse(request.body);
+  assertClusterSecretPolicy(body);
   const actor = actorFromRequest(request);
   const saved = await upsertClusterConfig(body, "api");
   clusters = await listClusterConfigs();

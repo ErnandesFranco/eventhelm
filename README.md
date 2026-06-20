@@ -75,6 +75,7 @@ EventHelm bootstraps clusters from `EVENTHELM_CLUSTERS_JSON` and stores them in 
 - Apply rejects stale reviews when the cluster registry state changed after the review was created.
 - Cluster read responses and audit records do not expose SASL passwords.
 - SASL registrations can use `passwordEnv` to reference an API-process environment variable instead of storing a raw password.
+- In token auth mode, inline SASL passwords are rejected; use `passwordEnv` for Kafka credentials.
 - The console Clusters view can inspect, select, and submit reviewed registrations or removals for API-managed clusters without exposing credentials.
 
 ## Consumer Lag

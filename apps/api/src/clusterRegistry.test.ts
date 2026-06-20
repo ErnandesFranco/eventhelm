@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import {
   clusterChangeReviewStateDrift,
+  clusterSecretPolicyViolation,
   createClusterChangeReview,
   deleteClusterConfig,
   getClusterChangeReview,
@@ -145,4 +146,29 @@ test("cluster change review drift detects registry changes before apply", async 
   );
 
   assert.match(clusterChangeReviewStateDrift(internal, await listClusterConfigs())[0] ?? "", /created after this review/);
+});
+
+test("cluster secret policy rejects inline SASL passwords in token mode", () => {
+  const inlineCluster = {
+    id: "secret-policy-inline",
+    name: "Secret Policy Inline",
+    brokers: ["kafka.example:9093"],
+    sasl: {
+      mechanism: "scram-sha-512" as const,
+      username: "eventhelm",
+      password: "do-not-store"
+    }
+  };
+  const envCluster = {
+    ...inlineCluster,
+    sasl: {
+      mechanism: "scram-sha-512" as const,
+      username: "eventhelm",
+      passwordEnv: "EVENTHELM_KAFKA_PASSWORD"
+    }
+  };
+
+  assert.match(clusterSecretPolicyViolation(inlineCluster, "token") ?? "", /Inline Kafka SASL passwords/);
+  assert.equal(clusterSecretPolicyViolation(envCluster, "token"), undefined);
+  assert.equal(clusterSecretPolicyViolation(inlineCluster, "dev"), undefined);
 });

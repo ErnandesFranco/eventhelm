@@ -1,6 +1,6 @@
 import { nanoid } from "nanoid";
 import { persistenceMode, query } from "./db.js";
-import type { ClusterConfig } from "./types.js";
+import type { ClusterConfig, SecurityMode } from "./types.js";
 
 export type ClusterSource = "environment" | "api";
 
@@ -333,6 +333,13 @@ export function clusterChangeReviewStateDrift(review: ClusterChangeReviewRecord,
     return ["Cluster was removed after this review was requested; create a new review from the current registry state."];
   }
   return ["Cluster registry state changed after this review was requested; create a new review from the current registry state."];
+}
+
+export function clusterSecretPolicyViolation(cluster: ClusterConfig, authMode: SecurityMode): string | undefined {
+  if (authMode === "token" && cluster.sasl?.password && !cluster.sasl.passwordEnv) {
+    return "Inline Kafka SASL passwords are not accepted in token auth mode. Use sasl.passwordEnv backed by an API-process secret.";
+  }
+  return undefined;
 }
 
 export function toPublicCluster(cluster: ClusterConfig | ClusterRecord): PublicCluster {
