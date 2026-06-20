@@ -5,6 +5,7 @@ import { getAgentRun, listAgentRuns, saveAgentRun } from "./agentRuns.js";
 import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import {
+  clusterChangeReviewStateDrift,
   createClusterChangeReview,
   deleteClusterConfig,
   getClusterChangeReview,
@@ -268,6 +269,10 @@ app.post("/api/clusters/reviews/:reviewId/apply", async (request) => {
   }
   if (review.status !== "approved") {
     throw badRequest("Cluster change review must be approved before apply.");
+  }
+  const driftReasons = clusterChangeReviewStateDrift(review, clusters);
+  if (driftReasons.length > 0) {
+    throw badRequest(`Cluster change review preflight failed. ${driftReasons.join(" ")}`);
   }
 
   const actor = actorFromRequest(request);

@@ -319,6 +319,22 @@ export async function markClusterChangeReviewApplied(reviewId: string, actor: st
   return toPublicClusterChangeReview(next);
 }
 
+export function clusterChangeReviewStateDrift(review: ClusterChangeReviewRecord, existingClusters: ClusterRecord[]): string[] {
+  const currentRecord = existingClusters.find((cluster) => cluster.id === review.clusterId);
+  const current = currentRecord ? toPublicCluster(currentRecord) : undefined;
+  if (sameReviewedCluster(review.current, current)) {
+    return [];
+  }
+
+  if (!review.current && current) {
+    return ["Cluster was created after this review was requested; create a new review from the current registry state."];
+  }
+  if (review.current && !current) {
+    return ["Cluster was removed after this review was requested; create a new review from the current registry state."];
+  }
+  return ["Cluster registry state changed after this review was requested; create a new review from the current registry state."];
+}
+
 export function toPublicCluster(cluster: ClusterConfig | ClusterRecord): PublicCluster {
   const record = cluster as Partial<ClusterRecord>;
   return {
@@ -393,6 +409,25 @@ function clusterReviewWarnings(request: ClusterChangeReviewRequest, current: Pub
   }
 
   return warnings;
+}
+
+function sameReviewedCluster(left: PublicCluster | undefined, right: PublicCluster | undefined) {
+  return stableClusterFingerprint(left) === stableClusterFingerprint(right);
+}
+
+function stableClusterFingerprint(cluster: PublicCluster | undefined) {
+  if (!cluster) {
+    return "missing";
+  }
+  return JSON.stringify({
+    id: cluster.id,
+    name: cluster.name,
+    brokers: cluster.brokers,
+    ssl: cluster.ssl ?? false,
+    saslConfigured: cluster.saslConfigured,
+    saslPasswordSource: cluster.saslPasswordSource,
+    source: cluster.source
+  });
 }
 
 export function sanitizeClusterConfig(cluster: ClusterConfig) {

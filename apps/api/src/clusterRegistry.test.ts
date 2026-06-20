@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  clusterChangeReviewStateDrift,
   createClusterChangeReview,
   deleteClusterConfig,
   getClusterChangeReview,
@@ -113,4 +114,35 @@ test("cluster change reviews preserve sanitized public metadata through review l
   const applied = await markClusterChangeReviewApplied(review.id, "applier-a");
   assert.equal(applied?.status, "applied");
   assert.equal(applied?.appliedBy, "applier-a");
+});
+
+test("cluster change review drift detects registry changes before apply", async () => {
+  await initializeClusterRegistry([]);
+  const review = await createClusterChangeReview(
+    {
+      action: "upsert",
+      cluster: {
+        id: "review-drift-cluster",
+        name: "Review Drift Cluster",
+        brokers: ["kafka-a.example:9092"]
+      }
+    },
+    "review-author",
+    await listClusterConfigs()
+  );
+  const internal = await getClusterChangeReview(review.id);
+
+  assert.ok(internal);
+  assert.deepEqual(clusterChangeReviewStateDrift(internal, await listClusterConfigs()), []);
+
+  await upsertClusterConfig(
+    {
+      id: "review-drift-cluster",
+      name: "Review Drift Cluster Outside Review",
+      brokers: ["kafka-b.example:9092"]
+    },
+    "api"
+  );
+
+  assert.match(clusterChangeReviewStateDrift(internal, await listClusterConfigs())[0] ?? "", /created after this review/);
 });

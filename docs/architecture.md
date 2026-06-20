@@ -85,7 +85,7 @@ Each sweep is stored as an `agent_runs` record with a durable run ID, actor, tri
 
 ### Cluster Registry
 
-Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. Direct API writes still require explicit write confirmation for compatibility, while the console uses `cluster_change_reviews` as a request-review-apply queue for cluster registrations, updates, and removals. Review records preserve sanitized current/proposed cluster metadata, warnings, actor decisions, and applied timestamps without exposing SASL passwords or secret reference names. SASL credentials can use an inline password for local use or `passwordEnv` for an API-process environment variable reference; production deployments still need a full external secret manager and RBAC before multi-team use.
+Configured Kafka clusters are bootstrapped from environment JSON and then stored in `cluster_configs` when Postgres is enabled. Direct API writes still require explicit write confirmation for compatibility, while the console uses `cluster_change_reviews` as a request-review-apply queue for cluster registrations, updates, and removals. Review records preserve sanitized current/proposed cluster metadata, warnings, actor decisions, and applied timestamps without exposing SASL passwords or secret reference names. Apply rejects stale reviews when the live sanitized registry state no longer matches the state captured at review creation. SASL credentials can use an inline password for local use or `passwordEnv` for an API-process environment variable reference; production deployments still need a full external secret manager and RBAC before multi-team use.
 
 ### Disk-Aware Rebalance
 
