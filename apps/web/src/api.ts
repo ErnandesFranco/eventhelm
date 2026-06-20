@@ -61,6 +61,43 @@ export type Topic = {
   isInternal: boolean;
 };
 
+export type TopicConfigEntry = {
+  name: string;
+  value: string;
+  isDefault: boolean;
+  source: number;
+  isSensitive: boolean;
+  readOnly: boolean;
+};
+
+export type TopicConfig = {
+  topic: string;
+  generatedAt: string;
+  entries: TopicConfigEntry[];
+  editable: string[];
+};
+
+export type TopicConfigUpdateRequest = {
+  configs: Array<{
+    name: string;
+    value: string;
+  }>;
+};
+
+export type TopicConfigUpdatePreview = {
+  topic: string;
+  generatedAt: string;
+  executable: boolean;
+  reviewToken: string;
+  warnings: string[];
+  changes: Array<{
+    name: string;
+    currentValue?: string;
+    newValue: string;
+    blockedReason?: string;
+  }>;
+};
+
 export type ConsumerGroup = {
   groupId: string;
   protocolType: string;
@@ -283,6 +320,25 @@ export const api = {
   security: () => request<SecurityStatus>("/api/security/status"),
   overview: (clusterId: string) => request<Overview>(`/api/clusters/${clusterId}/overview`),
   topics: (clusterId: string) => request<Topic[]>(`/api/clusters/${clusterId}/topics`),
+  topicConfig: (clusterId: string, topic: string) =>
+    request<TopicConfig>(`/api/clusters/${clusterId}/topics/${encodeURIComponent(topic)}/config`),
+  previewTopicConfig: (clusterId: string, topic: string, body: TopicConfigUpdateRequest) =>
+    request<TopicConfigUpdatePreview>(`/api/clusters/${clusterId}/topics/${encodeURIComponent(topic)}/config/preview`, {
+      method: "POST",
+      body: JSON.stringify(body)
+    }),
+  applyTopicConfig: (clusterId: string, topic: string, body: TopicConfigUpdateRequest & { reviewToken: string }) =>
+    request<{ accepted: true; reviewToken: string; changes: TopicConfigUpdatePreview["changes"] }>(
+      `/api/clusters/${clusterId}/topics/${encodeURIComponent(topic)}/config/apply`,
+      {
+        method: "POST",
+        headers: {
+          "x-eventhelm-actor": actor,
+          "x-eventhelm-confirm": "true"
+        },
+        body: JSON.stringify(body)
+      }
+    ),
   consumerGroups: (clusterId: string) =>
     request<ConsumerGroup[]>(`/api/clusters/${clusterId}/consumer-groups`),
   consumerGroupLag: (clusterId: string, groupId: string) =>

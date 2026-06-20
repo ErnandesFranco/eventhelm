@@ -76,6 +76,43 @@ export type TopicSummary = {
   isInternal: boolean;
 };
 
+export type TopicConfigEntry = {
+  name: string;
+  value: string;
+  isDefault: boolean;
+  source: number;
+  isSensitive: boolean;
+  readOnly: boolean;
+};
+
+export type TopicConfig = {
+  topic: string;
+  generatedAt: string;
+  entries: TopicConfigEntry[];
+  editable: string[];
+};
+
+export type TopicConfigUpdateRequest = {
+  configs: Array<{
+    name: string;
+    value: string;
+  }>;
+};
+
+export type TopicConfigUpdatePreview = {
+  topic: string;
+  generatedAt: string;
+  executable: boolean;
+  reviewToken: string;
+  warnings: string[];
+  changes: Array<{
+    name: string;
+    currentValue?: string;
+    newValue: string;
+    blockedReason?: string;
+  }>;
+};
+
 export type PartitionPlacement = {
   topic: string;
   partition: number;

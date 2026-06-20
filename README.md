@@ -10,6 +10,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 - A React console for command overview, live topology, topics, records, consumer groups, collectors, audit, and advisor agents.
 - Postgres persistence for audit events and broker collector state.
 - One broker-local collector per broker in the Docker lab.
+- Topic configuration inspection and reviewed updates for common mutable topic configs.
 - Disk-aware partition rebalance planning from broker collector telemetry.
 - Consumer group lag summaries and topic/partition offset drill-downs.
 - Reviewed consumer group offset resets with live Kafka bounds, stale-preview protection, and audit events.
@@ -66,6 +67,16 @@ EventHelm calculates consumer lag with Kafka committed offsets and topic log-end
 - `GET /api/clusters/:clusterId/consumer-groups/:groupId/lag` returns topic and partition offset details for drill-downs.
 - The Operator advisor flags consumer groups with active lag or unknown committed offsets.
 
+## Topic Configs
+
+EventHelm reads topic configs directly from Kafka and supports reviewed updates for an allowlist of common mutable configs:
+
+- `GET /api/clusters/:clusterId/topics/:topic/config` returns config values, source, default status, sensitivity, and read-only flags.
+- `POST /api/clusters/:clusterId/topics/:topic/config/preview` returns effective changes, warnings, and a review token.
+- `POST /api/clusters/:clusterId/topics/:topic/config/apply` requires the review token and write confirmation headers.
+- Execution preserves existing dynamic topic overrides, validates with Kafka, applies the reviewed changes, and verifies the requested values are visible before returning success.
+- Current editable configs are `cleanup.policy`, `retention.ms`, `delete.retention.ms`, `min.insync.replicas`, `max.message.bytes`, and `segment.bytes`.
+
 ## Offset Reset
 
 EventHelm treats consumer offset resets as a reviewed operation:
@@ -99,6 +110,7 @@ Current protections:
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - Audit and collector state are persisted in Postgres in the Docker lab.
 - Mutating requests support explicit confirmation headers.
+- Topic config updates require preview tokens and post-apply verification.
 - Consumer offset resets require preview tokens and reject stale live state.
 - Partition reassignment execution is locked by default with `EVENTHELM_ENABLE_REBALANCE_EXECUTION=false`.
 

@@ -1283,7 +1283,7 @@ label {
 }
 
 .topicTable .tableRow {
-  grid-template-columns: minmax(260px, 1.8fr) 110px 110px 130px;
+  grid-template-columns: minmax(260px, 1.8fr) 110px 110px 130px 120px;
 }
 
 .consumerTable .tableRow {
@@ -1296,6 +1296,14 @@ label {
 
 .offsetResetTable .tableRow {
   grid-template-columns: minmax(230px, 1.4fr) 90px 120px 120px 110px 120px;
+}
+
+.topicConfigTable .tableRow {
+  grid-template-columns: minmax(260px, 1.4fr) minmax(220px, 1fr) 140px 120px;
+}
+
+.topicConfigChangeTable .tableRow {
+  grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 1fr) minmax(180px, 1fr) 120px;
 }
 
 .collectorTable .tableRow {
@@ -1538,6 +1546,30 @@ label {
   margin-right: auto;
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.topicConfigSurface {
+  display: grid;
+  gap: 14px;
+}
+
+.topicConfigEditor {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(180px, 1fr)) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 0 16px 16px;
+}
+
+.topicConfigEditor button {
+  min-height: 38px;
+}
+
+.topicConfigPreview {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 16px;
 }
 
 .movementTable small {
@@ -1825,11 +1857,13 @@ label {
   }
 
   .offsetResetControls,
-  .offsetResetSummary {
+  .offsetResetSummary,
+  .topicConfigEditor {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .offsetResetControls button {
+  .offsetResetControls button,
+  .topicConfigEditor button {
     grid-column: 1 / -1;
   }
 
@@ -1884,6 +1918,7 @@ label {
   .brokerPressureGrid,
   .offsetResetControls,
   .offsetResetSummary,
+  .topicConfigEditor,
   .formGrid {
     grid-template-columns: 1fr;
   }

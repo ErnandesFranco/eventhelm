@@ -48,7 +48,9 @@ import type {
   Overview,
   RebalancePlan,
   SecurityStatus,
-  Topic
+  Topic,
+  TopicConfig,
+  TopicConfigUpdatePreview
 } from "./api";
 import { api } from "./api";
 import eventhelmMark from "./assets/eventhelm-mark.svg";
@@ -885,9 +887,24 @@ function TopicsView({
   const [query, setQuery] = useState("");
   const [showInternal, setShowInternal] = useState(false);
   const [creating, setCreating] = useState(false);
+  const [selectedConfig, setSelectedConfig] = useState<TopicConfig | null>(null);
+  const [configBusyTopic, setConfigBusyTopic] = useState<string | null>(null);
+  const [configError, setConfigError] = useState<string | null>(null);
   const filteredTopics = topics.filter(
     (topic) => (showInternal || !topic.isInternal) && topic.name.toLowerCase().includes(query.toLowerCase())
   );
+
+  async function inspectTopicConfig(topic: string) {
+    setConfigBusyTopic(topic);
+    setConfigError(null);
+    try {
+      setSelectedConfig(await api.topicConfig(clusterId, topic));
+    } catch (caught) {
+      setConfigError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setConfigBusyTopic(null);
+    }
+  }
 
   return (
     <div className="viewStack">
@@ -917,6 +934,7 @@ function TopicsView({
             <span>Partitions</span>
             <span>Replicas</span>
             <span>Class</span>
+            <span>Config</span>
           </div>
           {filteredTopics.map((topic) => (
             <div className="tableRow" key={topic.name}>
@@ -926,11 +944,33 @@ function TopicsView({
               <StatusPill tone={topic.isInternal ? "neutral" : "good"} icon={Layers3}>
                 {topic.isInternal ? "internal" : "user"}
               </StatusPill>
+              <button
+                className="secondaryButton compactButton"
+                type="button"
+                disabled={configBusyTopic === topic.name}
+                onClick={() => void inspectTopicConfig(topic.name)}
+              >
+                <Search size={15} />
+                {configBusyTopic === topic.name ? "Loading" : "Config"}
+              </button>
             </div>
           ))}
         </DataTable>
         {filteredTopics.length === 0 ? <EmptyState title="No topics match this filter" /> : null}
       </section>
+
+      {configError ? <div className="notice error">{configError}</div> : null}
+
+      {selectedConfig ? (
+        <TopicConfigPanel
+          clusterId={clusterId}
+          config={selectedConfig}
+          onChanged={async () => {
+            setSelectedConfig(await api.topicConfig(clusterId, selectedConfig.topic));
+            onChanged();
+          }}
+        />
+      ) : null}
 
       {creating ? (
         <CreateTopicDialog
@@ -944,6 +984,170 @@ function TopicsView({
         />
       ) : null}
     </div>
+  );
+}
+
+function TopicConfigPanel({
+  clusterId,
+  config,
+  onChanged
+}: {
+  clusterId: string;
+  config: TopicConfig;
+  onChanged: () => Promise<void>;
+}) {
+  const editableEntries = config.editable
+    .map((name) => config.entries.find((entry) => entry.name === name))
+    .filter((entry): entry is TopicConfig["entries"][number] => Boolean(entry));
+  const [draft, setDraft] = useState<Record<string, string>>(() =>
+    Object.fromEntries(editableEntries.map((entry) => [entry.name, entry.value]))
+  );
+  const [preview, setPreview] = useState<TopicConfigUpdatePreview | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    setDraft(Object.fromEntries(editableEntries.map((entry) => [entry.name, entry.value])));
+    setPreview(null);
+    setNotice(null);
+    setError(null);
+  }, [config.generatedAt, config.topic]);
+
+  const effectiveConfigs = editableEntries
+    .map((entry) => ({ name: entry.name, value: draft[entry.name] ?? entry.value, current: entry.value }))
+    .filter((entry) => entry.value !== entry.current)
+    .map(({ name, value }) => ({ name, value }));
+
+  async function previewConfig(event: FormEvent) {
+    event.preventDefault();
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      setPreview(await api.previewTopicConfig(clusterId, config.topic, { configs: effectiveConfigs }));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyConfig() {
+    if (!preview) {
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    setNotice(null);
+    try {
+      const result = await api.applyTopicConfig(clusterId, config.topic, {
+        configs: preview.changes.map((change) => ({ name: change.name, value: change.newValue })),
+        reviewToken: preview.reviewToken
+      });
+      await onChanged();
+      setNotice(`Applied ${result.changes.length} config changes.`);
+      setPreview(null);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="surface topicConfigSurface">
+      <SurfaceHeader icon={ShieldCheck} title={config.topic} meta={`${config.entries.length} configs`} />
+      {error ? <div className="notice error">{error}</div> : null}
+      {notice ? <div className="notice success">{notice}</div> : null}
+      <form className="topicConfigEditor" onSubmit={(event) => void previewConfig(event)}>
+        {editableEntries.map((entry) => (
+          <label key={entry.name}>
+            {entry.name}
+            <input
+              value={draft[entry.name] ?? entry.value}
+              onChange={(event) => {
+                setDraft((current) => ({ ...current, [entry.name]: event.target.value }));
+                setPreview(null);
+              }}
+            />
+          </label>
+        ))}
+        <button className="primaryButton" type="submit" disabled={busy || effectiveConfigs.length === 0}>
+          <Search size={17} />
+          {busy ? "Reviewing" : "Preview changes"}
+        </button>
+      </form>
+
+      <DataTable className="topicConfigTable">
+        <div className="tableRow tableHead">
+          <span>Config</span>
+          <span>Value</span>
+          <span>Source</span>
+          <span>Mode</span>
+        </div>
+        {config.entries
+          .filter((entry) => config.editable.includes(entry.name) || !entry.isDefault)
+          .map((entry) => (
+            <div className="tableRow" key={entry.name}>
+              <span className="mono strongText">{entry.name}</span>
+              <span className="mono detailText">{entry.isSensitive ? "sensitive" : entry.value}</span>
+              <span>{topicConfigSource(entry.source)}</span>
+              <StatusPill tone={entry.readOnly ? "neutral" : entry.isDefault ? "neutral" : "good"} icon={CircleDot}>
+                {entry.readOnly ? "read-only" : entry.isDefault ? "default" : "override"}
+              </StatusPill>
+            </div>
+          ))}
+      </DataTable>
+
+      {preview ? (
+        <div className="topicConfigPreview">
+          {preview.warnings.length > 0 ? (
+            <div className="resetWarnings">
+              {preview.warnings.map((warning) => (
+                <span key={warning}>
+                  <AlertTriangle size={14} />
+                  {warning}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
+          <DataTable className="topicConfigChangeTable">
+            <div className="tableRow tableHead">
+              <span>Config</span>
+              <span>Current</span>
+              <span>Next</span>
+              <span>Status</span>
+            </div>
+            {preview.changes.map((change) => (
+              <div className="tableRow" key={change.name}>
+                <span className="mono strongText">{change.name}</span>
+                <span className="mono">{change.currentValue ?? "unknown"}</span>
+                <span className="mono">{change.newValue}</span>
+                {change.blockedReason ? (
+                  <StatusPill tone="bad" icon={AlertTriangle}>
+                    blocked
+                  </StatusPill>
+                ) : (
+                  <StatusPill tone="good" icon={CheckCircle2}>
+                    ready
+                  </StatusPill>
+                )}
+              </div>
+            ))}
+          </DataTable>
+
+          <footer className="offsetResetFooter">
+            <span className="mono">{preview.reviewToken.slice(0, 12)}</span>
+            <button className="primaryButton" type="button" disabled={!preview.executable || busy} onClick={() => void applyConfig()}>
+              <ShieldCheck size={17} />
+              Apply reviewed config
+            </button>
+          </footer>
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -1507,6 +1711,18 @@ function formatSignedIntegerString(value?: string) {
     return value.startsWith("-") ? value : `+${value}`;
   }
   return parsed > 0 ? `+${parsed.toLocaleString()}` : parsed.toLocaleString();
+}
+
+function topicConfigSource(source: number) {
+  const sources: Record<number, string> = {
+    1: "topic",
+    2: "broker",
+    3: "broker default",
+    4: "static broker",
+    5: "default",
+    6: "logger"
+  };
+  return sources[source] ?? "unknown";
 }
 
 function CollectorsView({ collectors, brokerCount }: { collectors: CollectorState[]; brokerCount: number }) {

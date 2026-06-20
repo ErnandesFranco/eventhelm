@@ -8,15 +8,18 @@ import { getCorsOrigin, getPort, getSecurityStatus, isRebalanceExecutionEnabled,
 import { closeDatabase, initDatabase, persistenceMode } from "./db.js";
 import {
   alterPartitionAssignments,
+  applyTopicConfigUpdate,
   browseMessages,
   createTopic,
   describeConsumerGroupLag,
   describeCluster,
+  describeTopicConfig,
   executeConsumerGroupOffsetReset,
   listConsumerGroups,
   listPartitionPlacements,
   listTopics,
   previewConsumerGroupOffsetReset,
+  previewTopicConfigUpdate,
   produceMessage
 } from "./kafka.js";
 import { buildDiskRebalancePlan } from "./rebalance.js";
@@ -107,6 +110,18 @@ const offsetResetRequestSchema = z
     }
   });
 
+const topicConfigUpdateSchema = z.object({
+  configs: z
+    .array(
+      z.object({
+        name: z.string().min(1),
+        value: z.string().min(1)
+      })
+    )
+    .min(1)
+    .max(12)
+});
+
 app.get("/health", async () => ({
   ok: true,
   service: "eventhelm-api",
@@ -152,6 +167,11 @@ app.get("/api/clusters/:clusterId/topics", async (request) => {
   return listTopics(getCluster(params.clusterId));
 });
 
+app.get("/api/clusters/:clusterId/topics/:topic/config", async (request) => {
+  const params = z.object({ clusterId: z.string(), topic: z.string().min(1) }).parse(request.params);
+  return describeTopicConfig(getCluster(params.clusterId), params.topic);
+});
+
 app.post("/api/clusters/:clusterId/topics", async (request) => {
   assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string() }).parse(request.params);
@@ -190,6 +210,57 @@ app.post("/api/clusters/:clusterId/topics", async (request) => {
   });
 
   return { created };
+});
+
+app.post("/api/clusters/:clusterId/topics/:topic/config/preview", async (request) => {
+  const params = z.object({ clusterId: z.string(), topic: z.string().min(1) }).parse(request.params);
+  if (params.topic.startsWith("__")) {
+    throw badRequest("EventHelm will not alter internal Kafka topic configs.");
+  }
+  const body = topicConfigUpdateSchema.parse(request.body);
+  return previewTopicConfigUpdate(getCluster(params.clusterId), params.topic, body);
+});
+
+app.post("/api/clusters/:clusterId/topics/:topic/config/apply", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string(), topic: z.string().min(1) }).parse(request.params);
+  if (params.topic.startsWith("__")) {
+    throw badRequest("EventHelm will not alter internal Kafka topic configs.");
+  }
+  const body = topicConfigUpdateSchema
+    .and(
+      z.object({
+        reviewToken: z.string().length(64)
+      })
+    )
+    .parse(request.body);
+
+  try {
+    const preview = await applyTopicConfigUpdate(getCluster(params.clusterId), params.topic, body, body.reviewToken);
+    await recordAudit({
+      actor: actorFromRequest(request),
+      action: "topic.config_update",
+      clusterId: params.clusterId,
+      resourceType: "topic",
+      resourceName: params.topic,
+      details: {
+        reviewToken: preview.reviewToken,
+        changes: preview.changes.map((change) => ({
+          name: change.name,
+          from: change.currentValue,
+          to: change.newValue
+        }))
+      }
+    });
+
+    return {
+      accepted: true,
+      reviewToken: preview.reviewToken,
+      changes: preview.changes
+    };
+  } catch (error) {
+    throw badRequest(error instanceof Error ? error.message : String(error));
+  }
 });
 
 app.get("/api/clusters/:clusterId/consumer-groups", async (request) => {

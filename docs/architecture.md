@@ -18,6 +18,7 @@ EventHelm is intended to become an open-source event-streaming operations cockpi
 The API owns:
 
 - Kafka AdminClient operations.
+- Topic config inspection and reviewed config updates.
 - Message browsing and producing.
 - Consumer group lag calculation from committed offsets and log-end offsets.
 - Consumer group offset-reset previews and reviewed execution.
@@ -92,6 +93,16 @@ EventHelm treats offset reset as preview-review-execute:
 6. The API recomputes the preview from live Kafka state and rejects stale tokens before calling KafkaJS `setOffsets`.
 7. Successful resets are recorded in the audit ledger with the token and summary counts.
 
+### Topic Config Updates
+
+EventHelm treats topic config changes as reviewed mutations:
+
+1. The API reads configs with KafkaJS `describeConfigs`.
+2. The console exposes an allowlist of common mutable configs rather than arbitrary broker knobs.
+3. Preview validates values, calculates effective changes, preserves existing dynamic overrides, and returns a review token.
+4. Execution recomputes the plan, rejects stale tokens, calls Kafka `alterConfigs` with `validateOnly` before applying, and verifies the requested values are visible after apply.
+5. Successful changes are recorded in the audit ledger with old values, new values, and review token.
+
 ## Deployment Shape
 
 ```mermaid
@@ -121,7 +132,7 @@ flowchart LR
 1. Persist configured clusters, agent runs, findings, and executed rebalance history in Postgres.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
-4. Add approval queues for offset resets, topic mutations, and rebalance execution.
+4. Add approval queues for offset resets, topic config changes, topic mutations, and rebalance execution.
 5. Add reassignment throttling, cancellation, and JMX validation.
 6. Add GitOps import/export for topics and connector configs.
 7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

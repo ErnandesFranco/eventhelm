@@ -1,5 +1,6 @@
 import { Kafka, logLevel } from "kafkajs";
 import { buildOffsetResetPreview } from "./offsetReset.js";
+import { buildTopicConfigUpdatePlan, toTopicConfig } from "./topicConfig.js";
 import type {
   ClusterConfig,
   ConsumerGroupLag,
@@ -8,10 +9,14 @@ import type {
   ConsumerOffsetResetRequest,
   PartitionPlacement,
   RebalancePlan,
+  TopicConfig,
+  TopicConfigUpdatePreview,
+  TopicConfigUpdateRequest,
   TopicSummary
 } from "./types.js";
 
 type KafkaAdmin = ReturnType<ReturnType<typeof createKafka>["admin"]>;
+const topicConfigResourceType = 2;
 type GroupDescription = {
   groupId: string;
   protocolType: string;
@@ -73,6 +78,109 @@ export async function listTopics(cluster: ClusterConfig): Promise<TopicSummary[]
   } finally {
     await admin.disconnect();
   }
+}
+
+export async function describeTopicConfig(cluster: ClusterConfig, topic: string): Promise<TopicConfig> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    return await describeTopicConfigWithAdmin(admin, topic);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export async function previewTopicConfigUpdate(
+  cluster: ClusterConfig,
+  topic: string,
+  request: TopicConfigUpdateRequest
+): Promise<TopicConfigUpdatePreview> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const current = await describeTopicConfigWithAdmin(admin, topic);
+    return buildTopicConfigUpdatePlan(current, request).preview;
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export async function applyTopicConfigUpdate(
+  cluster: ClusterConfig,
+  topic: string,
+  request: TopicConfigUpdateRequest,
+  reviewToken: string
+): Promise<TopicConfigUpdatePreview> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const current = await describeTopicConfigWithAdmin(admin, topic);
+    const plan = buildTopicConfigUpdatePlan(current, request);
+    if (plan.preview.reviewToken !== reviewToken) {
+      throw new Error("Topic config preview is stale. Generate a fresh preview before applying changes.");
+    }
+    if (!plan.preview.executable) {
+      throw new Error(plan.preview.warnings[0] ?? "Topic config preview is not executable.");
+    }
+
+    const resources = [
+      {
+        type: topicConfigResourceType,
+        name: topic,
+        configEntries: plan.configEntries
+      }
+    ];
+    await admin.alterConfigs({ validateOnly: true, resources });
+    await admin.alterConfigs({ validateOnly: false, resources });
+    await waitForTopicConfigValues(admin, topic, plan.preview.changes.map((change) => ({ name: change.name, value: change.newValue })));
+    return plan.preview;
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+async function waitForTopicConfigValues(
+  admin: KafkaAdmin,
+  topic: string,
+  expected: Array<{ name: string; value: string }>
+) {
+  for (let attempt = 0; attempt < 12; attempt += 1) {
+    const current = await describeTopicConfigWithAdmin(admin, topic);
+    const entryByName = new Map(current.entries.map((entry) => [entry.name, entry.value]));
+    if (expected.every((entry) => entryByName.get(entry.name) === entry.value)) {
+      return;
+    }
+    await new Promise((resolve) => setTimeout(resolve, 500));
+  }
+  throw new Error("Kafka accepted the config update, but the requested values were not visible after verification.");
+}
+
+async function describeTopicConfigWithAdmin(admin: KafkaAdmin, topic: string) {
+  const described = await admin.describeConfigs({
+    includeSynonyms: false,
+    resources: [
+      {
+        type: topicConfigResourceType,
+        name: topic
+      }
+    ]
+  });
+  const resource = described.resources.find((candidate) => candidate.resourceName === topic);
+  if (!resource || resource.errorCode !== 0) {
+    throw new Error(resource?.errorMessage || `Topic '${topic}' config was not found`);
+  }
+
+  return toTopicConfig(
+    topic,
+    resource.configEntries.map((entry) => ({
+      name: entry.configName,
+      value: entry.configValue,
+      isDefault: entry.isDefault,
+      source: entry.configSource,
+      isSensitive: entry.isSensitive,
+      readOnly: entry.readOnly
+    }))
+  );
 }
 
 export async function listPartitionPlacements(cluster: ClusterConfig, includeInternal = false): Promise<PartitionPlacement[]> {
@@ -218,7 +326,7 @@ export async function describeConsumerGroupLag(cluster: ClusterConfig, groupId: 
     if (!group) {
       throw new Error(`Consumer group '${groupId}' was not found`);
     }
-    return buildConsumerGroupLag(admin, group);
+    return await buildConsumerGroupLag(admin, group);
   } finally {
     await admin.disconnect();
   }
@@ -232,7 +340,7 @@ export async function previewConsumerGroupOffsetReset(
   const admin = createKafka(cluster).admin();
   await admin.connect();
   try {
-    return buildConsumerGroupOffsetResetPreview(admin, groupId, request);
+    return await buildConsumerGroupOffsetResetPreview(admin, groupId, request);
   } finally {
     await admin.disconnect();
   }
