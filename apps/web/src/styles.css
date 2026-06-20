@@ -1440,6 +1440,44 @@ label {
   grid-template-columns: 170px 120px 140px 130px 110px minmax(240px, 1fr) 280px;
 }
 
+.historyToolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.historyToolbar .searchField {
+  flex: 1 1 280px;
+  max-width: 520px;
+}
+
+.compactField {
+  min-width: 180px;
+}
+
+.historyStats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-left: auto;
+  align-self: end;
+}
+
+.historyStats span {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  padding: 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #f7fafc;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 780;
+}
+
 .reassignmentStatusTable .tableRow {
   grid-template-columns: minmax(260px, 1.4fr) minmax(160px, 1fr) minmax(130px, 0.7fr) minmax(130px, 0.7fr);
 }

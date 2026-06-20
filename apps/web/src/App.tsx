@@ -1286,73 +1286,121 @@ function RebalancePlanHistory({
   onLoad: (planId: string) => void;
   onReject: (planId: string) => void;
 }) {
+  const [statusFilter, setStatusFilter] = useState<"all" | RebalancePlanSummaryRecord["status"]>("all");
+  const [query, setQuery] = useState("");
+  const normalizedQuery = query.trim().toLowerCase();
+  const statusCounts = useMemo(
+    () =>
+      history.reduce<Record<RebalancePlanSummaryRecord["status"], number>>(
+        (counts, record) => {
+          counts[record.status] += 1;
+          return counts;
+        },
+        { planned: 0, approved: 0, rejected: 0, executing: 0, executed: 0 }
+      ),
+    [history]
+  );
+  const filteredHistory = useMemo(
+    () =>
+      history.filter((record) => {
+        const matchesStatus = statusFilter === "all" || record.status === statusFilter;
+        const matchesQuery = normalizedQuery === "" || rebalanceHistorySearchText(record).includes(normalizedQuery);
+        return matchesStatus && matchesQuery;
+      }),
+    [history, normalizedQuery, statusFilter]
+  );
+
   if (history.length === 0) {
     return <EmptyState title="No rebalance plans retained yet" />;
   }
 
   return (
-    <DataTable className="rebalanceHistoryTable">
-      <div className="tableRow tableHead">
-        <span>Plan</span>
-        <span>Status</span>
-        <span>Actor</span>
-        <span>Movements</span>
-        <span>Data</span>
-        <span>Risk</span>
-        <span>Action</span>
-      </div>
-      {history.map((record) => (
-        <div className="tableRow" key={record.id}>
-          <span>
-            <strong>{formatDateTime(record.createdAt)}</strong>
-            <small className="mono">{record.id.slice(0, 10)}</small>
-          </span>
-          <StatusPill tone={rebalanceStatusTone(record.status)} icon={CircleDot}>
-            {record.status}
-          </StatusPill>
-          <span className="mono">{record.actor}</span>
-          <span>
-            <strong>{record.summary.movements}</strong>
-            <small>{record.summary.partitionsEvaluated} evaluated</small>
-          </span>
-          <span>{formatBytes(record.summary.estimatedBytesMoved)}</span>
-          <span>
-            <strong>{record.warnings.length} warnings</strong>
-            <small>
-              {record.executionStartedBy
-                ? `started by ${record.executionStartedBy}`
-                : record.reviewedBy
-                  ? `reviewed by ${record.reviewedBy}`
-                  : record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}
-            </small>
-          </span>
-          <span className="planActionGroup">
-            <button className="secondaryButton compactButton" type="button" disabled={activePlanId === record.id} onClick={() => onLoad(record.id)}>
-              <FileClock size={15} />
-              {activePlanId === record.id ? "Loaded" : "Load"}
-            </button>
-            <button
-              className="secondaryButton compactButton"
-              type="button"
-              disabled={record.status === "approved" || record.status === "executing" || record.status === "executed"}
-              onClick={() => onApprove(record.id)}
-            >
-              <ShieldCheck size={15} />
-              Approve
-            </button>
-            <button
-              className="secondaryButton compactButton"
-              type="button"
-              disabled={record.status === "rejected" || record.status === "executing" || record.status === "executed"}
-              onClick={() => onReject(record.id)}
-            >
-              <X size={15} />
-              Reject
-            </button>
-          </span>
+    <>
+      <div className="historyToolbar">
+        <SearchField value={query} onChange={setQuery} placeholder="Search rebalance plans" />
+        <label className="fieldControl compactField" htmlFor="rebalance-history-status">
+          Status
+          <select id="rebalance-history-status" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as typeof statusFilter)}>
+            <option value="all">All plans</option>
+            <option value="planned">Planned ({statusCounts.planned})</option>
+            <option value="approved">Approved ({statusCounts.approved})</option>
+            <option value="rejected">Rejected ({statusCounts.rejected})</option>
+            <option value="executing">Executing ({statusCounts.executing})</option>
+            <option value="executed">Executed ({statusCounts.executed})</option>
+          </select>
+        </label>
+        <div className="historyStats">
+          <span>{filteredHistory.length} shown</span>
+          <span>{history.length} retained</span>
         </div>
-      ))}
-    </DataTable>
+      </div>
+      {filteredHistory.length === 0 ? (
+        <EmptyState title="No matching rebalance plans" />
+      ) : (
+        <DataTable className="rebalanceHistoryTable">
+          <div className="tableRow tableHead">
+            <span>Plan</span>
+            <span>Status</span>
+            <span>Actor</span>
+            <span>Movements</span>
+            <span>Data</span>
+            <span>Risk</span>
+            <span>Action</span>
+          </div>
+          {filteredHistory.map((record) => (
+            <div className="tableRow" key={record.id}>
+              <span>
+                <strong>{formatDateTime(record.createdAt)}</strong>
+                <small className="mono">{record.id.slice(0, 10)}</small>
+              </span>
+              <StatusPill tone={rebalanceStatusTone(record.status)} icon={CircleDot}>
+                {record.status}
+              </StatusPill>
+              <span className="mono">{record.actor}</span>
+              <span>
+                <strong>{record.summary.movements}</strong>
+                <small>{record.summary.partitionsEvaluated} evaluated</small>
+              </span>
+              <span>{formatBytes(record.summary.estimatedBytesMoved)}</span>
+              <span>
+                <strong>{record.warnings.length} warnings</strong>
+                <small>
+                  {record.executionStartedBy
+                    ? `started by ${record.executionStartedBy}`
+                    : record.reviewedBy
+                      ? `reviewed by ${record.reviewedBy}`
+                      : record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}
+                </small>
+              </span>
+              <span className="planActionGroup">
+                <button className="secondaryButton compactButton" type="button" disabled={activePlanId === record.id} onClick={() => onLoad(record.id)}>
+                  <FileClock size={15} />
+                  {activePlanId === record.id ? "Loaded" : "Load"}
+                </button>
+                <button
+                  className="secondaryButton compactButton"
+                  type="button"
+                  disabled={record.status === "approved" || record.status === "executing" || record.status === "executed"}
+                  onClick={() => onApprove(record.id)}
+                >
+                  <ShieldCheck size={15} />
+                  Approve
+                </button>
+                <button
+                  className="secondaryButton compactButton"
+                  type="button"
+                  disabled={record.status === "rejected" || record.status === "executing" || record.status === "executed"}
+                  onClick={() => onReject(record.id)}
+                >
+                  <X size={15} />
+                  Reject
+                </button>
+              </span>
+            </div>
+          ))}
+        </DataTable>
+      )}
+    </>
   );
 }
 
@@ -3067,6 +3115,25 @@ function lagTone(lag: number): "good" | "warning" | "bad" | "neutral" {
     return "warning";
   }
   return "good";
+}
+
+function rebalanceHistorySearchText(record: RebalancePlanSummaryRecord) {
+  return [
+    record.id,
+    record.status,
+    record.actor,
+    record.reviewedBy,
+    record.executionStartedBy,
+    record.executionBlockedReason,
+    record.summary.sourceBrokerIds.map((brokerId) => `source ${brokerId}`).join(" "),
+    record.summary.targetBrokerIds.map((brokerId) => `target ${brokerId}`).join(" "),
+    record.summary.movements,
+    record.summary.estimatedBytesMoved,
+    ...record.warnings
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ")
+    .toLowerCase();
 }
 
 function rebalanceStatusTone(status: RebalancePlanSummaryRecord["status"]): "good" | "warning" | "bad" | "neutral" {
