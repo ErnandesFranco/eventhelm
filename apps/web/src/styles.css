@@ -1366,13 +1366,19 @@ label {
 }
 
 .rebalanceHistoryTable .tableRow {
-  grid-template-columns: 170px 120px 140px 130px 110px minmax(240px, 1fr) 130px;
+  grid-template-columns: 170px 120px 140px 130px 110px minmax(240px, 1fr) 280px;
 }
 
 .rebalanceHistoryTable small {
   display: block;
   color: var(--muted);
   margin-top: 3px;
+}
+
+.planActionGroup {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
 }
 
 .strongText {

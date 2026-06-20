@@ -1,6 +1,12 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { getRebalancePlan, listRebalancePlans, markRebalancePlanExecuted, saveRebalancePlan } from "./rebalancePlans.js";
+import {
+  getRebalancePlan,
+  listRebalancePlans,
+  markRebalancePlanExecuted,
+  markRebalancePlanReviewed,
+  saveRebalancePlan
+} from "./rebalancePlans.js";
 import type { RebalancePlan } from "./types.js";
 
 test("rebalance plan history lists summaries and preserves full plan lookup", async () => {
@@ -15,10 +21,21 @@ test("rebalance plan history lists summaries and preserves full plan lookup", as
   assert.equal(history[0]?.summary.movements, 1);
   assert.equal(stored?.plan.reassignment.partitions[0]?.topic, "orders.created");
 
+  const approved = await markRebalancePlanReviewed(plan.id, "approved", "reviewer-a", "looks balanced");
+  assert.equal(approved?.status, "approved");
+  assert.equal(approved?.reviewedBy, "reviewer-a");
+  assert.equal(approved?.reviewComment, "looks balanced");
+
   await markRebalancePlanExecuted(plan.id);
   const executed = await listRebalancePlans("history-cluster", 10);
   assert.equal(executed[0]?.status, "executed");
   assert.equal(typeof executed[0]?.executedAt, "string");
+
+  const rejectedPlan = rebalancePlan("history-plan-b");
+  await saveRebalancePlan(rejectedPlan, "history-test");
+  const rejected = await markRebalancePlanReviewed(rejectedPlan.id, "rejected", "reviewer-b");
+  assert.equal(rejected?.status, "rejected");
+  assert.equal(rejected?.reviewedBy, "reviewer-b");
 });
 
 function rebalancePlan(id: string): RebalancePlan {

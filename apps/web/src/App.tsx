@@ -736,6 +736,24 @@ function RebalanceView({
     }
   }
 
+  async function reviewStoredPlan(planId: string, decision: "approved" | "rejected") {
+    setHistoryBusy(true);
+    setError(null);
+    try {
+      if (decision === "approved") {
+        await api.approveRebalancePlan(clusterId, planId);
+      } else {
+        await api.rejectRebalancePlan(clusterId, planId);
+      }
+      await refreshPlanHistory();
+      await onAuditChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setHistoryBusy(false);
+    }
+  }
+
   const brokerPressure = plan?.brokerPressure ?? brokerPressureFromOverview(overview);
   const placementComputed = Boolean(plan);
 
@@ -949,7 +967,13 @@ function RebalanceView({
 
       <section className="surface">
         <SurfaceHeader icon={FileClock} title="Plan History" meta={historyBusy ? "loading" : `${planHistory.length} retained`} />
-        <RebalancePlanHistory history={planHistory} activePlanId={plan?.id} onLoad={(planId) => void loadStoredPlan(planId)} />
+        <RebalancePlanHistory
+          history={planHistory}
+          activePlanId={plan?.id}
+          onApprove={(planId) => void reviewStoredPlan(planId, "approved")}
+          onLoad={(planId) => void loadStoredPlan(planId)}
+          onReject={(planId) => void reviewStoredPlan(planId, "rejected")}
+        />
       </section>
     </div>
   );
@@ -958,11 +982,15 @@ function RebalanceView({
 function RebalancePlanHistory({
   history,
   activePlanId,
-  onLoad
+  onApprove,
+  onLoad,
+  onReject
 }: {
   history: RebalancePlanSummaryRecord[];
   activePlanId?: string;
+  onApprove: (planId: string) => void;
   onLoad: (planId: string) => void;
+  onReject: (planId: string) => void;
 }) {
   if (history.length === 0) {
     return <EmptyState title="No rebalance plans retained yet" />;
@@ -985,7 +1013,7 @@ function RebalancePlanHistory({
             <strong>{formatDateTime(record.createdAt)}</strong>
             <small className="mono">{record.id.slice(0, 10)}</small>
           </span>
-          <StatusPill tone={record.status === "executed" ? "good" : record.executable ? "warning" : "neutral"} icon={CircleDot}>
+          <StatusPill tone={rebalanceStatusTone(record.status)} icon={CircleDot}>
             {record.status}
           </StatusPill>
           <span className="mono">{record.actor}</span>
@@ -996,12 +1024,34 @@ function RebalancePlanHistory({
           <span>{formatBytes(record.summary.estimatedBytesMoved)}</span>
           <span>
             <strong>{record.warnings.length} warnings</strong>
-            <small>{record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}</small>
+            <small>
+              {record.reviewedBy ? `reviewed by ${record.reviewedBy}` : record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}
+            </small>
           </span>
-          <button className="secondaryButton compactButton" type="button" disabled={activePlanId === record.id} onClick={() => onLoad(record.id)}>
-            <FileClock size={15} />
-            {activePlanId === record.id ? "Loaded" : "Load plan"}
-          </button>
+          <span className="planActionGroup">
+            <button className="secondaryButton compactButton" type="button" disabled={activePlanId === record.id} onClick={() => onLoad(record.id)}>
+              <FileClock size={15} />
+              {activePlanId === record.id ? "Loaded" : "Load"}
+            </button>
+            <button
+              className="secondaryButton compactButton"
+              type="button"
+              disabled={record.status === "approved" || record.status === "executed"}
+              onClick={() => onApprove(record.id)}
+            >
+              <ShieldCheck size={15} />
+              Approve
+            </button>
+            <button
+              className="secondaryButton compactButton"
+              type="button"
+              disabled={record.status === "rejected" || record.status === "executed"}
+              onClick={() => onReject(record.id)}
+            >
+              <X size={15} />
+              Reject
+            </button>
+          </span>
         </div>
       ))}
     </DataTable>
@@ -2229,6 +2279,16 @@ function lagTone(lag: number): "good" | "warning" | "bad" | "neutral" {
     return "warning";
   }
   return "good";
+}
+
+function rebalanceStatusTone(status: RebalancePlanSummaryRecord["status"]): "good" | "warning" | "bad" | "neutral" {
+  if (status === "executed" || status === "approved") {
+    return "good";
+  }
+  if (status === "rejected") {
+    return "bad";
+  }
+  return "warning";
 }
 
 function formatBytes(value?: number) {

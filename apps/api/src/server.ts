@@ -39,7 +39,13 @@ import {
   produceMessage
 } from "./kafka.js";
 import { buildDiskRebalancePlan } from "./rebalance.js";
-import { getRebalancePlan, listRebalancePlans, markRebalancePlanExecuted, saveRebalancePlan } from "./rebalancePlans.js";
+import {
+  getRebalancePlan,
+  listRebalancePlans,
+  markRebalancePlanExecuted,
+  markRebalancePlanReviewed,
+  saveRebalancePlan
+} from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
 import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
@@ -494,6 +500,72 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
   return plan;
 });
 
+app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
+  const body = z
+    .object({
+      comment: z.string().max(500).optional()
+    })
+    .parse(request.body ?? {});
+  const storedPlan = await getRebalancePlan(params.planId);
+  if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
+    throw badRequest("Rebalance plan was not found for this cluster.");
+  }
+  if (storedPlan.status === "executed") {
+    throw badRequest("Executed rebalance plans cannot be reviewed again.");
+  }
+
+  const actor = actorFromRequest(request);
+  const reviewed = await markRebalancePlanReviewed(storedPlan.id, "approved", actor, body.comment);
+  await recordAudit({
+    actor,
+    action: "rebalance.approve",
+    clusterId: params.clusterId,
+    resourceType: "cluster",
+    resourceName: params.clusterId,
+    details: {
+      planId: storedPlan.id,
+      movements: storedPlan.plan.summary.movements,
+      comment: body.comment
+    }
+  });
+  return reviewed;
+});
+
+app.post("/api/clusters/:clusterId/rebalance/plans/:planId/reject", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
+  const body = z
+    .object({
+      comment: z.string().max(500).optional()
+    })
+    .parse(request.body ?? {});
+  const storedPlan = await getRebalancePlan(params.planId);
+  if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
+    throw badRequest("Rebalance plan was not found for this cluster.");
+  }
+  if (storedPlan.status === "executed") {
+    throw badRequest("Executed rebalance plans cannot be reviewed again.");
+  }
+
+  const actor = actorFromRequest(request);
+  const reviewed = await markRebalancePlanReviewed(storedPlan.id, "rejected", actor, body.comment);
+  await recordAudit({
+    actor,
+    action: "rebalance.reject",
+    clusterId: params.clusterId,
+    resourceType: "cluster",
+    resourceName: params.clusterId,
+    details: {
+      planId: storedPlan.id,
+      movements: storedPlan.plan.summary.movements,
+      comment: body.comment
+    }
+  });
+  return reviewed;
+});
+
 app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   assertWriteAllowed(request);
   if (!isRebalanceExecutionEnabled()) {
@@ -513,6 +585,9 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
   }
   if (storedPlan.status === "executed") {
     throw badRequest("Rebalance plan has already been executed.");
+  }
+  if (storedPlan.status !== "approved") {
+    throw badRequest("Rebalance plan must be approved before execution.");
   }
   if (!storedPlan.plan.executable || storedPlan.plan.movements.length === 0) {
     throw badRequest("Rebalance plan is not executable. Regenerate a plan after enabling execution.");

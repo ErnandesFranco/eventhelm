@@ -180,7 +180,7 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
-export type RebalancePlanStatus = "planned" | "executed";
+export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executed";
 
 export type RebalancePlanRecord = {
   id: string;
@@ -189,6 +189,9 @@ export type RebalancePlanRecord = {
   status: RebalancePlanStatus;
   createdAt: string;
   executedAt?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewComment?: string;
   plan: RebalancePlan;
 };
 

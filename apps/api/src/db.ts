@@ -120,6 +120,18 @@ const migrations: DatabaseMigration[] = [
       create index if not exists cluster_configs_source_idx on cluster_configs (source);
       create index if not exists cluster_configs_updated_at_idx on cluster_configs (updated_at desc);
     `
+  },
+  {
+    id: "003_rebalance_plan_reviews",
+    name: "Rebalance plan review decisions",
+    sql: `
+      alter table rebalance_plans
+        add column if not exists reviewed_by text,
+        add column if not exists reviewed_at timestamptz,
+        add column if not exists review_comment text;
+
+      create index if not exists rebalance_plans_reviewed_at_idx on rebalance_plans (reviewed_at desc);
+    `
   }
 ];
 

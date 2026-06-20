@@ -85,9 +85,9 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 4. The planner scores target brokers by projected disk usage and estimates bytes moved from collector log-dir telemetry.
 5. The API persists the generated plan and returns a plan ID.
 6. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
-7. Operators can review retained plan history and reload a stored plan by ID.
-8. Execution accepts the stored plan ID, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
-9. Execution stays locked by default until production auth, approvals, and RBAC are configured.
+7. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
+8. Execution accepts only approved stored plan IDs, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
+9. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
 
 ### Consumer Offset Reset
 
@@ -140,7 +140,7 @@ flowchart LR
 1. Add production deployment metadata and external secret references.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
-4. Add approval queues for offset resets, topic config changes, topic mutations, and rebalance execution.
+4. Add approval queues for offset resets, topic config changes, and topic mutations.
 5. Add reassignment throttling, cancellation, and JMX validation.
 6. Add GitOps import/export for topics and connector configs.
 7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

@@ -342,7 +342,7 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
-export type RebalancePlanStatus = "planned" | "executed";
+export type RebalancePlanStatus = "planned" | "approved" | "rejected" | "executed";
 
 export type RebalancePlanRecord = {
   id: string;
@@ -351,6 +351,9 @@ export type RebalancePlanRecord = {
   status: RebalancePlanStatus;
   createdAt: string;
   executedAt?: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewComment?: string;
   plan: RebalancePlan;
 };
 
@@ -501,6 +504,24 @@ export const api = {
     request<RebalancePlanSummaryRecord[]>(`/api/clusters/${clusterId}/rebalance/plans?limit=${limit}`),
   rebalancePlan: (clusterId: string, planId: string) =>
     request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}`),
+  approveRebalancePlan: (clusterId: string, planId: string, comment?: string) =>
+    request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}/approve`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify({ comment })
+    }),
+  rejectRebalancePlan: (clusterId: string, planId: string, comment?: string) =>
+    request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}/reject`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify({ comment })
+    }),
   executeRebalance: (clusterId: string, planId: string) =>
     request<{ accepted: boolean; planId: string }>(`/api/clusters/${clusterId}/rebalance/execute`, {
       method: "POST",
