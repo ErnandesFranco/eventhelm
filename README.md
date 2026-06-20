@@ -71,6 +71,7 @@ EventHelm bootstraps clusters from `EVENTHELM_CLUSTERS_JSON` and stores them in 
 - `POST /api/clusters` registers or updates a cluster and requires write confirmation headers.
 - `DELETE /api/clusters/:clusterId` removes API-managed clusters; environment-managed clusters are protected.
 - Cluster read responses and audit records do not expose SASL passwords.
+- The console Clusters view can register, inspect, select, and remove API-managed clusters without exposing credentials.
 
 ## Consumer Lag
 

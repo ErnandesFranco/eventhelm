@@ -27,6 +27,7 @@ import {
   Server,
   ShieldAlert,
   ShieldCheck,
+  Trash2,
   Users,
   X
 } from "lucide-react";
@@ -40,6 +41,7 @@ import type {
   AgentRunRecord,
   AuditEvent,
   Cluster,
+  ClusterRegistration,
   CollectorState,
   ConsumerGroup,
   ConsumerGroupLag,
@@ -57,12 +59,14 @@ import type {
 import { api } from "./api";
 import eventhelmMark from "./assets/eventhelm-mark.svg";
 
-type Tab = "command" | "agents" | "rebalance" | "topics" | "messages" | "consumers" | "collectors" | "audit";
+type Tab = "command" | "agents" | "rebalance" | "clusters" | "topics" | "messages" | "consumers" | "collectors" | "audit";
+type ClusterSaslMechanism = NonNullable<ClusterRegistration["sasl"]>["mechanism"];
 
 const tabs: Array<{ id: Tab; label: string; icon: LucideIcon; group: "Operate" | "Inspect" }> = [
   { id: "command", label: "Command", icon: Command, group: "Operate" },
   { id: "agents", label: "Agents", icon: Bot, group: "Operate" },
   { id: "rebalance", label: "Rebalance", icon: ArrowRightLeft, group: "Operate" },
+  { id: "clusters", label: "Clusters", icon: Boxes, group: "Operate" },
   { id: "topics", label: "Topics", icon: Database, group: "Inspect" },
   { id: "messages", label: "Messages", icon: MessageSquareText, group: "Inspect" },
   { id: "consumers", label: "Consumers", icon: Users, group: "Inspect" },
@@ -102,11 +106,22 @@ export function App() {
       const [loadedClusters, loadedSecurity] = await Promise.all([api.clusters(), api.security()]);
       setClusters(loadedClusters);
       setSecurity(loadedSecurity);
-      const nextClusterId = selectedClusterId || loadedClusters[0]?.id;
+      const nextClusterId = loadedClusters.some((cluster) => cluster.id === selectedClusterId)
+        ? selectedClusterId
+        : (loadedClusters[0]?.id ?? "");
       if (!nextClusterId) {
+        setOverview(null);
+        setTopics([]);
+        setGroups([]);
+        setCollectors([]);
+        setAudit([]);
+        setAgentRun(null);
+        setAgentHistory([]);
         return;
       }
-      setSelectedClusterId(nextClusterId);
+      if (nextClusterId !== selectedClusterId) {
+        setSelectedClusterId(nextClusterId);
+      }
       const [loadedOverview, loadedTopics, loadedGroups, loadedCollectors, loadedAudit] = await Promise.all([
         api.overview(nextClusterId),
         api.topics(nextClusterId),
@@ -129,6 +144,36 @@ export function App() {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setLoading(false);
+    }
+  }, [selectedClusterId]);
+
+  const refreshClusterRegistry = useCallback(async () => {
+    setError(null);
+    try {
+      const [loadedClusters, loadedAudit] = await Promise.all([api.clusters(), api.audit()]);
+      setClusters(loadedClusters);
+      setAudit(loadedAudit);
+      const nextClusterId = loadedClusters.some((cluster) => cluster.id === selectedClusterId)
+        ? selectedClusterId
+        : (loadedClusters[0]?.id ?? "");
+
+      if (!nextClusterId) {
+        setSelectedClusterId("");
+        setOverview(null);
+        setTopics([]);
+        setGroups([]);
+        setCollectors([]);
+        setMessages([]);
+        setAgentRun(null);
+        setAgentHistory([]);
+        return;
+      }
+
+      if (nextClusterId !== selectedClusterId) {
+        setSelectedClusterId(nextClusterId);
+      }
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
     }
   }, [selectedClusterId]);
 
@@ -247,6 +292,14 @@ export function App() {
         ) : null}
         {!loading && activeTab === "rebalance" && overview ? (
           <RebalanceView clusterId={selectedClusterId} overview={overview} onAuditChanged={() => api.audit().then(setAudit)} />
+        ) : null}
+        {!loading && activeTab === "clusters" ? (
+          <ClustersView
+            clusters={clusters}
+            selectedClusterId={selectedClusterId}
+            onSelect={setSelectedClusterId}
+            onChanged={refreshClusterRegistry}
+          />
         ) : null}
         {!loading && activeTab === "topics" ? (
           <TopicsView clusterId={selectedClusterId} topics={topics} brokerCount={overview?.brokerCount ?? 1} onChanged={() => void load()} />
@@ -1908,6 +1961,315 @@ function topicConfigSource(source: number) {
     6: "logger"
   };
   return sources[source] ?? "unknown";
+}
+
+type ClusterFormState = {
+  id: string;
+  name: string;
+  brokers: string;
+  ssl: boolean;
+  saslEnabled: boolean;
+  mechanism: ClusterSaslMechanism;
+  username: string;
+  password: string;
+};
+
+const saslMechanisms: ClusterSaslMechanism[] = ["plain", "scram-sha-256", "scram-sha-512"];
+
+function createEmptyClusterForm(): ClusterFormState {
+  return {
+    id: "",
+    name: "",
+    brokers: "",
+    ssl: false,
+    saslEnabled: false,
+    mechanism: "plain",
+    username: "",
+    password: ""
+  };
+}
+
+function parseClusterBrokers(value: string) {
+  return value
+    .split(/[\n,]+/)
+    .map((broker) => broker.trim())
+    .filter(Boolean);
+}
+
+function ClustersView({
+  clusters,
+  selectedClusterId,
+  onSelect,
+  onChanged
+}: {
+  clusters: Cluster[];
+  selectedClusterId: string;
+  onSelect: (clusterId: string) => void;
+  onChanged: () => void | Promise<void>;
+}) {
+  const [query, setQuery] = useState("");
+  const [form, setForm] = useState<ClusterFormState>(() => createEmptyClusterForm());
+  const [saving, setSaving] = useState(false);
+  const [deletingClusterId, setDeletingClusterId] = useState<string | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [notice, setNotice] = useState<string | null>(null);
+  const apiManagedCount = clusters.filter((cluster) => cluster.source === "api").length;
+  const selectedCluster = clusters.find((cluster) => cluster.id === selectedClusterId);
+  const normalizedQuery = query.trim().toLowerCase();
+  const filtered = clusters.filter((cluster) =>
+    `${cluster.id} ${cluster.name} ${cluster.brokers.join(" ")}`.toLowerCase().includes(normalizedQuery)
+  );
+
+  const updateForm = (patch: Partial<ClusterFormState>) => {
+    setForm((current) => ({ ...current, ...patch }));
+  };
+
+  const saveCluster = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setLocalError(null);
+    setNotice(null);
+
+    const brokers = parseClusterBrokers(form.brokers);
+    if (!form.id.trim() || !form.name.trim()) {
+      setLocalError("Cluster ID and display name are required.");
+      return;
+    }
+    if (brokers.length === 0) {
+      setLocalError("At least one broker address is required.");
+      return;
+    }
+    if (form.saslEnabled && (!form.username.trim() || !form.password)) {
+      setLocalError("SASL username and password are required.");
+      return;
+    }
+
+    setSaving(true);
+    try {
+      const body: ClusterRegistration = {
+        id: form.id.trim(),
+        name: form.name.trim(),
+        brokers,
+        ssl: form.ssl,
+        sasl: form.saslEnabled
+          ? {
+              mechanism: form.mechanism,
+              username: form.username.trim(),
+              password: form.password
+            }
+          : undefined
+      };
+      const cluster = await api.upsertCluster(body);
+      setNotice(`${cluster.name} saved.`);
+      setForm(createEmptyClusterForm());
+      await onChanged();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const removeCluster = async (cluster: Cluster) => {
+    if (cluster.source !== "api") {
+      return;
+    }
+    setLocalError(null);
+    setNotice(null);
+    if (pendingDeleteId !== cluster.id) {
+      setPendingDeleteId(cluster.id);
+      return;
+    }
+
+    setDeletingClusterId(cluster.id);
+    try {
+      await api.deleteCluster(cluster.id);
+      setPendingDeleteId(null);
+      setNotice(`${cluster.name} removed.`);
+      await onChanged();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setDeletingClusterId(null);
+    }
+  };
+
+  return (
+    <div className="viewStack clusterRegistryView">
+      <div className="viewHeader">
+        <div>
+          <h2>Clusters</h2>
+          <p>
+            {clusters.length} registered / {apiManagedCount} API-managed
+          </p>
+        </div>
+        {selectedCluster ? (
+          <StatusPill tone="good" icon={Server}>
+            {selectedCluster.name}
+          </StatusPill>
+        ) : null}
+      </div>
+
+      {localError ? <div className="notice error">{localError}</div> : null}
+      {notice ? <div className="notice success">{notice}</div> : null}
+
+      <div className="filterBar">
+        <SearchField value={query} onChange={setQuery} placeholder="Search clusters" />
+        <button className="secondaryButton" type="button" onClick={() => void onChanged()}>
+          <RefreshCw size={16} />
+          Refresh
+        </button>
+      </div>
+
+      <div className="clusterRegistryGrid">
+        <section className="surface clusterListSurface">
+          <SurfaceHeader icon={Boxes} title="Registry" meta={`${filtered.length} visible`} />
+          <DataTable className="clusterTable">
+            <div className="tableRow tableHead">
+              <span>Cluster</span>
+              <span>Source</span>
+              <span>Brokers</span>
+              <span>Security</span>
+              <span>Updated</span>
+              <span>Actions</span>
+            </div>
+            {filtered.map((cluster) => {
+              const source = cluster.source ?? "environment";
+              const apiManaged = source === "api";
+              const deleteArmed = pendingDeleteId === cluster.id;
+              return (
+                <div className="tableRow" data-testid={`cluster-row-${cluster.id}`} key={cluster.id}>
+                  <span>
+                    <strong>{cluster.name}</strong>
+                    <small className="mono">{cluster.id}</small>
+                  </span>
+                  <StatusPill tone={apiManaged ? "good" : "neutral"} icon={apiManaged ? CheckCircle2 : LockKeyhole}>
+                    {apiManaged ? "API" : "Environment"}
+                  </StatusPill>
+                  <span>
+                    <strong>{cluster.brokers.length} brokers</strong>
+                    <small className="mono">{cluster.brokers[0] ?? "none"}</small>
+                  </span>
+                  <span className="clusterSecurityStack">
+                    <StatusPill tone={cluster.ssl ? "good" : "neutral"} icon={ShieldCheck}>
+                      {cluster.ssl ? "TLS" : "Plain"}
+                    </StatusPill>
+                    <StatusPill tone={cluster.saslConfigured ? "good" : "neutral"} icon={KeyRound}>
+                      {cluster.saslConfigured ? "SASL" : "No SASL"}
+                    </StatusPill>
+                  </span>
+                  <span>{cluster.updatedAt ? formatDateTime(cluster.updatedAt) : cluster.createdAt ? formatDateTime(cluster.createdAt) : "boot"}</span>
+                  <span className="clusterActionGroup">
+                    <button
+                      className="secondaryButton compactButton"
+                      data-testid={`cluster-open-${cluster.id}`}
+                      type="button"
+                      disabled={cluster.id === selectedClusterId}
+                      onClick={() => onSelect(cluster.id)}
+                    >
+                      <Server size={15} />
+                      {cluster.id === selectedClusterId ? "Selected" : "Open"}
+                    </button>
+                    <button
+                      className={`secondaryButton compactButton ${deleteArmed ? "dangerButton" : ""}`}
+                      data-testid={`cluster-delete-${cluster.id}`}
+                      type="button"
+                      disabled={!apiManaged || deletingClusterId === cluster.id}
+                      title={apiManaged ? "Delete API-managed cluster" : "Environment-managed clusters are read-only"}
+                      onClick={() => void removeCluster(cluster)}
+                    >
+                      {deleteArmed ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
+                      {deleteArmed ? "Confirm" : "Delete"}
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
+          </DataTable>
+          {filtered.length === 0 ? <EmptyState title="No clusters found" /> : null}
+        </section>
+
+        <section className="surface clusterRegisterSurface">
+          <SurfaceHeader icon={Plus} title="Register Cluster" meta="metadata" />
+          <form className="clusterForm" data-testid="cluster-register-form" onSubmit={saveCluster}>
+            <div className="formGrid">
+              <label>
+                Cluster ID
+                <input value={form.id} onChange={(event) => updateForm({ id: event.target.value })} placeholder="prod-eu-1" required />
+              </label>
+              <label>
+                Display name
+                <input value={form.name} onChange={(event) => updateForm({ name: event.target.value })} placeholder="Production EU" required />
+              </label>
+              <label className="fieldSpanFull">
+                Brokers
+                <textarea
+                  className="compactTextarea clusterBrokerInput"
+                  value={form.brokers}
+                  onChange={(event) => updateForm({ brokers: event.target.value })}
+                  placeholder={"broker-1:9092\nbroker-2:9092"}
+                  required
+                />
+              </label>
+              <label className="inlineSwitch">
+                <input type="checkbox" checked={form.ssl} onChange={(event) => updateForm({ ssl: event.target.checked })} />
+                TLS
+              </label>
+              <label className="inlineSwitch">
+                <input type="checkbox" checked={form.saslEnabled} onChange={(event) => updateForm({ saslEnabled: event.target.checked })} />
+                SASL
+              </label>
+              {form.saslEnabled ? (
+                <>
+                  <label>
+                    Mechanism
+                    <select
+                      value={form.mechanism}
+                      onChange={(event) => updateForm({ mechanism: event.target.value as ClusterSaslMechanism })}
+                    >
+                      {saslMechanisms.map((mechanism) => (
+                        <option value={mechanism} key={mechanism}>
+                          {mechanism.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Username
+                    <input value={form.username} onChange={(event) => updateForm({ username: event.target.value })} />
+                  </label>
+                  <label className="fieldSpanFull">
+                    Password
+                    <input
+                      type="password"
+                      value={form.password}
+                      onChange={(event) => updateForm({ password: event.target.value })}
+                      autoComplete="new-password"
+                    />
+                  </label>
+                </>
+              ) : (
+                <div className="clusterSecurityPlaceholder fieldSpanFull">
+                  <LockKeyhole size={16} />
+                  <span>No SASL credentials configured</span>
+                </div>
+              )}
+            </div>
+            <footer>
+              <button className="secondaryButton" type="button" disabled={saving} onClick={() => setForm(createEmptyClusterForm())}>
+                <X size={16} />
+                Clear
+              </button>
+              <button className="primaryButton" type="submit" disabled={saving}>
+                <Plus size={17} />
+                {saving ? "Saving" : "Register cluster"}
+              </button>
+            </footer>
+          </form>
+        </section>
+      </div>
+    </div>
+  );
 }
 
 function CollectorsView({ collectors, brokerCount }: { collectors: CollectorState[]; brokerCount: number }) {

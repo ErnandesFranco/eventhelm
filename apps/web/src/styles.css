@@ -1345,6 +1345,10 @@ label {
   grid-template-columns: minmax(240px, 1.2fr) minmax(180px, 1fr) minmax(180px, 1fr) 120px;
 }
 
+.clusterTable .tableRow {
+  grid-template-columns: minmax(170px, 1.2fr) 100px minmax(145px, 0.9fr) minmax(145px, 1fr) 105px 170px;
+}
+
 .collectorTable .tableRow {
   grid-template-columns: minmax(230px, 1.4fr) 90px 120px 130px 120px minmax(190px, 1fr) minmax(190px, 1fr);
 }
@@ -1379,6 +1383,81 @@ label {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+}
+
+.clusterRegistryGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.55fr) minmax(320px, 0.75fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.clusterListSurface,
+.clusterRegisterSurface {
+  min-width: 0;
+}
+
+.clusterTable small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.clusterSecurityStack,
+.clusterActionGroup {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.dangerButton {
+  border-color: #efb8b8;
+  color: #921f1f;
+  background: var(--red-soft);
+}
+
+.clusterForm {
+  display: grid;
+  gap: 14px;
+  padding: 16px;
+}
+
+.clusterForm footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.fieldSpanFull {
+  grid-column: 1 / -1;
+}
+
+.compactTextarea {
+  min-height: 104px;
+}
+
+.clusterBrokerInput {
+  font-size: 0.84rem;
+}
+
+.clusterSecurityPlaceholder {
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--panel-soft);
+  color: var(--muted);
+  padding: 0 11px;
+  font-size: 0.86rem;
+  font-weight: 730;
 }
 
 .strongText {
@@ -1855,6 +1934,12 @@ label {
   padding: 20px;
 }
 
+@media (max-width: 1500px) {
+  .clusterRegistryGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 1240px) {
   .metricStrip {
     grid-template-columns: repeat(3, minmax(150px, 1fr));
@@ -1939,6 +2024,10 @@ label {
     grid-template-columns: 1fr;
   }
 
+  .clusterRegistryGrid {
+    grid-template-columns: 1fr;
+  }
+
   .topologyHub {
     width: 100%;
     min-height: 118px;
@@ -1962,14 +2051,16 @@ label {
 
   .commandTools,
   .filterBar,
-  .modalSurface footer {
+  .modalSurface footer,
+  .clusterForm footer {
     align-items: stretch;
     flex-direction: column;
   }
 
   .commandTools > *,
   .filterBar > *,
-  .modalSurface footer > * {
+  .modalSurface footer > *,
+  .clusterForm footer > * {
     width: 100%;
   }
 
@@ -1983,6 +2074,7 @@ label {
   .agentRunStrip,
   .rebalanceControlGrid,
   .brokerPressureGrid,
+  .clusterRegistryGrid,
   .offsetResetControls,
   .offsetResetSummary,
   .topicConfigEditor,

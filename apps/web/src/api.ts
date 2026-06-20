@@ -386,9 +386,12 @@ const actor = import.meta.env.VITE_EVENTHELM_ACTOR ?? import.meta.env.VITE_BROKA
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   const headers: Record<string, string> = {
-    "content-type": "application/json",
     ...(init?.headers as Record<string, string> | undefined)
   };
+
+  if (init?.body !== undefined && !Object.keys(headers).some((header) => header.toLowerCase() === "content-type")) {
+    headers["content-type"] = "application/json";
+  }
 
   if (apiToken) {
     headers.authorization = `Bearer ${apiToken}`;
