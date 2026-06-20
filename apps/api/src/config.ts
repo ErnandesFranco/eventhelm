@@ -80,7 +80,8 @@ export function getSecurityStatus(): SecurityStatus {
     collectorTokenConfigured: Boolean(env("EVENTHELM_COLLECTOR_TOKEN", "BROKARA_COLLECTOR_TOKEN")),
     corsOrigin,
     readAuthRequired: isReadAuthRequired(),
-    writeConfirmationRequired: env("EVENTHELM_REQUIRE_WRITE_CONFIRMATION", "BROKARA_REQUIRE_WRITE_CONFIRMATION") === "true"
+    writeConfirmationRequired: env("EVENTHELM_REQUIRE_WRITE_CONFIRMATION", "BROKARA_REQUIRE_WRITE_CONFIRMATION") === "true",
+    writeRateLimitPerMinute: getWriteRateLimitPerMinute()
   };
 }
 
@@ -117,6 +118,19 @@ export function isReadAuthRequired(): boolean {
     return configured === "true";
   }
   return (env("EVENTHELM_AUTH_MODE", "BROKARA_AUTH_MODE") ?? "dev") === "token";
+}
+
+export function getWriteRateLimitPerMinute(): number {
+  const raw = env("EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE", "BROKARA_WRITE_RATE_LIMIT_PER_MINUTE");
+  if (!raw) {
+    return 0;
+  }
+
+  const parsed = Number(raw);
+  if (!Number.isInteger(parsed) || parsed < 0) {
+    throw new Error("EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE must be a non-negative integer.");
+  }
+  return parsed;
 }
 
 export function getCorsOrigin(): string | string[] | true {

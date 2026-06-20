@@ -1,6 +1,8 @@
 import type { FastifyRequest } from "fastify";
-import { getApiTokens, getCollectorToken, getSecurityStatus } from "./config.js";
+import { getApiTokens, getCollectorToken, getSecurityStatus, getWriteRateLimitPerMinute } from "./config.js";
 import type { ApiTokenConfig, AuthScope } from "./types.js";
+
+const writeRateBuckets = new Map<string, number[]>();
 
 function unauthorized(message: string) {
   const error = new Error(message);
@@ -17,6 +19,12 @@ function preconditionRequired(message: string) {
 function forbidden(message: string) {
   const error = new Error(message);
   (error as Error & { statusCode: number }).statusCode = 403;
+  return error;
+}
+
+function tooManyRequests(message: string) {
+  const error = new Error(message);
+  (error as Error & { statusCode: number }).statusCode = 429;
   return error;
 }
 
@@ -81,6 +89,28 @@ export function assertWriteAllowed(request: FastifyRequest, scope: AuthScope = "
   if (security.writeConfirmationRequired && confirmed !== "true") {
     throw preconditionRequired("Write confirmation is required for this action.");
   }
+
+  assertWriteRateLimit(request, scope);
+}
+
+function assertWriteRateLimit(request: FastifyRequest, scope: AuthScope) {
+  const limit = getWriteRateLimitPerMinute();
+  if (limit <= 0) {
+    return;
+  }
+
+  const now = Date.now();
+  const windowStart = now - 60_000;
+  const actor = actorFromRequest(request);
+  const key = `${actor}\u0000${scope}`;
+  const bucket = (writeRateBuckets.get(key) ?? []).filter((timestamp) => timestamp >= windowStart);
+  if (bucket.length >= limit) {
+    writeRateBuckets.set(key, bucket);
+    throw tooManyRequests(`Write rate limit exceeded for actor '${actor}' and scope '${scope}'.`);
+  }
+
+  bucket.push(now);
+  writeRateBuckets.set(key, bucket);
 }
 
 export function assertCollectorAllowed(request: FastifyRequest) {

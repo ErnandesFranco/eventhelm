@@ -343,6 +343,7 @@ export type SecurityStatus = {
   corsOrigin: string;
   readAuthRequired: boolean;
   writeConfirmationRequired: boolean;
+  writeRateLimitPerMinute: number;
 };
 
 export type AgentSeverity = "critical" | "high" | "medium" | "low" | "info";

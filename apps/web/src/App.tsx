@@ -576,7 +576,8 @@ function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
     ["Collector token", security.collectorTokenConfigured ? "configured" : "not configured"],
     ["CORS origin", security.corsOrigin],
     ["Read auth", security.readAuthRequired ? "required" : "not required"],
-    ["Write confirmation", security.writeConfirmationRequired ? "required" : "not required"]
+    ["Write confirmation", security.writeConfirmationRequired ? "required" : "not required"],
+    ["Write rate limit", security.writeRateLimitPerMinute > 0 ? `${security.writeRateLimitPerMinute}/minute` : "disabled"]
   ];
   return (
     <div className="keyValueList">

@@ -30,7 +30,8 @@ test("advisor sweeps include durable run metadata and severity summary", async (
         collectorTokenConfigured: false,
         corsOrigin: "*",
         readAuthRequired: false,
-        writeConfirmationRequired: true
+        writeConfirmationRequired: true,
+        writeRateLimitPerMinute: 0
       },
       persistenceMode: "memory"
     },

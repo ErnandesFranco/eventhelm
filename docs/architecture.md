@@ -32,6 +32,8 @@ The API owns:
 
 Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
 
+Mutating API routes pass through a shared write guard that checks scope, optional write confirmation, and an optional in-memory per-actor/per-scope rate limit. Distributed rate limits and per-user quotas still belong in the future identity/control-plane layer.
+
 ### Web Console
 
 The console is an operator workbench. The first screen should answer:

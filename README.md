@@ -140,6 +140,7 @@ Current protections:
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
 - In token mode, read auth is required by default unless `EVENTHELM_REQUIRE_READ_AUTH=false` is set.
+- Mutating endpoints support per-actor/per-scope write rate limits with `EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE`.
 - Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
 - The API tracks applied database migrations in `schema_migrations` and exposes schema status from `/health`.
 - Mutating requests support explicit confirmation headers.
@@ -154,7 +155,7 @@ Still required before shared or production use:
 - Retention policies and backup guidance for persisted control-plane state.
 - Approval workflows for production mutations.
 - TLS/SASL examples and external secret references.
-- Rate limits and per-user quotas.
+- Distributed rate limits and per-user quotas.
 
 ## Local Development
 

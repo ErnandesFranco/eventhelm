@@ -8,7 +8,8 @@ const managedEnvKeys = [
   "EVENTHELM_API_TOKEN",
   "EVENTHELM_API_TOKENS_JSON",
   "EVENTHELM_REQUIRE_READ_AUTH",
-  "EVENTHELM_REQUIRE_WRITE_CONFIRMATION"
+  "EVENTHELM_REQUIRE_WRITE_CONFIRMATION",
+  "EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE"
 ];
 
 test("scoped API tokens enforce write scope boundaries", () => {
@@ -59,6 +60,25 @@ test("legacy API token keeps admin access", () => {
       const request = requestWithToken("legacy-admin", true);
       assert.doesNotThrow(() => assertReadAllowed(request));
       assert.doesNotThrow(() => assertWriteAllowed(request, "rebalance:execute"));
+    }
+  );
+});
+
+test("write rate limit is enforced per actor and scope", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token",
+      EVENTHELM_API_TOKENS_JSON: JSON.stringify([
+        { token: "limited-token", actor: "limited-operator", scopes: ["read", "topic:write"] }
+      ]),
+      EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE: "2"
+    },
+    () => {
+      const request = requestWithToken("limited-token");
+      assert.doesNotThrow(() => assertWriteAllowed(request, "topic:write"));
+      assert.doesNotThrow(() => assertWriteAllowed(request, "topic:write"));
+      const error = captureError(() => assertWriteAllowed(request, "topic:write"));
+      assert.equal(error.statusCode, 429);
     }
   );
 });
