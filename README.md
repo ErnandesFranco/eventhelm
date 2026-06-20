@@ -112,6 +112,14 @@ EventHelm includes a disk-pressure rebalance planner:
 - Execution reloads the stored plan and rejects stale plans when current replica placement no longer matches the reviewed assignments.
 - Execution is locked unless `EVENTHELM_ENABLE_REBALANCE_EXECUTION=true` is set.
 
+## Audit
+
+The audit ledger supports investigation filters:
+
+- `GET /api/audit` returns recent events.
+- Query parameters include `clusterId`, `actor`, `action`, `resourceType`, `resourceName`, `query`, and `limit`.
+- The console Audit view includes search, action, actor, and resource filters for operator triage.
+
 ## Security Status
 
 This repository is still an early local-development platform. The Docker lab is intentionally easy to run, not production hardened.

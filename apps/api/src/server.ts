@@ -588,7 +588,20 @@ app.post("/api/collectors/snapshot", async (request) => {
   return upsertSnapshot(body);
 });
 
-app.get("/api/audit", async () => listAuditEvents());
+app.get("/api/audit", async (request) => {
+  const query = z
+    .object({
+      clusterId: z.string().optional(),
+      actor: z.string().optional(),
+      action: z.string().optional(),
+      resourceType: z.string().optional(),
+      resourceName: z.string().optional(),
+      query: z.string().optional(),
+      limit: z.coerce.number().int().min(1).max(500).default(250)
+    })
+    .parse(request.query);
+  return listAuditEvents(query);
+});
 
 app.get("/api/agents", async () => listAdvisorAgents());
 

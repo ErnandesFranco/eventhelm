@@ -213,6 +213,16 @@ export type AuditEvent = {
   createdAt: string;
 };
 
+export type AuditFilters = {
+  clusterId?: string;
+  actor?: string;
+  action?: string;
+  resourceType?: string;
+  resourceName?: string;
+  query?: string;
+  limit?: number;
+};
+
 export type SecurityStatus = {
   authMode: "dev" | "token";
   apiTokenConfigured: boolean;
@@ -424,7 +434,17 @@ export const api = {
       }
     ),
   collectors: () => request<CollectorState[]>("/api/collectors"),
-  audit: () => request<AuditEvent[]>("/api/audit"),
+  audit: (filters: AuditFilters = {}) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(filters)) {
+      if (value !== undefined && value !== "") {
+        query.set(key, String(value));
+      }
+    }
+    const serialized = query.toString();
+    const suffix = serialized ? `?${serialized}` : "";
+    return request<AuditEvent[]>(`/api/audit${suffix}`);
+  },
   agents: (clusterId: string) => request<AgentRun>(`/api/clusters/${clusterId}/agents`),
   agentRuns: (clusterId: string, limit = 12) =>
     request<AgentRunRecord[]>(`/api/clusters/${clusterId}/agents/runs?limit=${limit}`),

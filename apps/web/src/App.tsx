@@ -1815,14 +1815,56 @@ function CollectorsView({ collectors, brokerCount }: { collectors: CollectorStat
 
 function AuditView({ audit }: { audit: AuditEvent[] }) {
   const [query, setQuery] = useState("");
-  const filtered = audit.filter((event) =>
-    `${event.action} ${event.resourceName ?? ""} ${event.actor}`.toLowerCase().includes(query.toLowerCase())
-  );
+  const [action, setAction] = useState("all");
+  const [actorFilter, setActorFilter] = useState("all");
+  const [resourceType, setResourceType] = useState("all");
+  const actions = uniqueValues(audit.map((event) => event.action));
+  const actors = uniqueValues(audit.map((event) => event.actor));
+  const resourceTypes = uniqueValues(audit.map((event) => event.resourceType).filter((value): value is string => Boolean(value)));
+  const filtered = audit.filter((event) => {
+    const searchText = `${event.action} ${event.resourceName ?? ""} ${event.resourceType ?? ""} ${event.actor} ${JSON.stringify(
+      event.details ?? {}
+    )}`.toLowerCase();
+    return (
+      searchText.includes(query.toLowerCase()) &&
+      (action === "all" || event.action === action) &&
+      (actorFilter === "all" || event.actor === actorFilter) &&
+      (resourceType === "all" || event.resourceType === resourceType)
+    );
+  });
   return (
     <TableView
       title="Audit"
-      subtitle={`${filtered.length} in-memory audit events`}
-      search={<SearchField value={query} onChange={setQuery} placeholder="Search audit" />}
+      subtitle={`${filtered.length} of ${audit.length} audit events`}
+      search={
+        <>
+          <SearchField value={query} onChange={setQuery} placeholder="Search audit" />
+          <select value={action} onChange={(event) => setAction(event.target.value)} aria-label="Filter audit action">
+            <option value="all">All actions</option>
+            {actions.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select value={actorFilter} onChange={(event) => setActorFilter(event.target.value)} aria-label="Filter audit actor">
+            <option value="all">All actors</option>
+            {actors.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+          <select value={resourceType} onChange={(event) => setResourceType(event.target.value)} aria-label="Filter audit resource type">
+            <option value="all">All resources</option>
+            {resourceTypes.map((item) => (
+              <option value={item} key={item}>
+                {item}
+              </option>
+            ))}
+          </select>
+        </>
+      }
       empty="No audit events found"
       rows={filtered}
       render={() => (
@@ -2147,6 +2189,10 @@ function formatDateTime(iso: string) {
     hour: "2-digit",
     minute: "2-digit"
   }).format(new Date(iso));
+}
+
+function uniqueValues(values: string[]) {
+  return [...new Set(values)].sort((left, right) => left.localeCompare(right));
 }
 
 function prettyJson(value?: string) {
