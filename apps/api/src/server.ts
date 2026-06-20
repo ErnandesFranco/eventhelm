@@ -5,13 +5,19 @@ import { getAgentRun, listAgentRuns, saveAgentRun } from "./agentRuns.js";
 import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import {
+  createClusterChangeReview,
   deleteClusterConfig,
+  getClusterChangeReview,
   initializeClusterRegistry,
+  listClusterChangeReviews,
   listClusterConfigs,
+  markClusterChangeReview,
+  markClusterChangeReviewApplied,
   sanitizeClusterConfig,
   toPublicCluster,
   upsertClusterConfig
 } from "./clusterRegistry.js";
+import type { ClusterRecord } from "./clusterRegistry.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
 import {
   clusterSchema,
@@ -50,13 +56,13 @@ import {
 import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
 import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
-let clusters = loadClusters();
+let clusters: ClusterRecord[] = [];
 const app = Fastify({
   logger: true
 });
 
 await initDatabase();
-clusters = await initializeClusterRegistry(clusters);
+clusters = await initializeClusterRegistry(loadClusters());
 
 await app.register(cors, {
   origin: getCorsOrigin()
@@ -163,6 +169,156 @@ app.get("/health", async () => ({
 app.get("/api/security/status", async () => getSecurityStatus());
 
 app.get("/api/clusters", async () => clusters.map(toPublicCluster));
+
+app.get("/api/clusters/reviews", async (request) => {
+  const query = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(100).default(25)
+    })
+    .parse(request.query);
+  return listClusterChangeReviews(query.limit);
+});
+
+app.post("/api/clusters/reviews", async (request) => {
+  assertWriteAllowed(request, "cluster:write");
+  const body = z
+    .discriminatedUnion("action", [
+      z.object({
+        action: z.literal("upsert"),
+        cluster: clusterSchema.extend({
+          id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "Cluster IDs must be lowercase alphanumeric slugs.")
+        })
+      }),
+      z.object({
+        action: z.literal("delete"),
+        clusterId: z.string().min(1)
+      })
+    ])
+    .parse(request.body);
+  const actor = actorFromRequest(request);
+  const review = await createClusterChangeReview(body, actor, clusters);
+  await recordAudit({
+    actor,
+    action: "cluster.review_create",
+    clusterId: review.clusterId,
+    resourceType: "cluster",
+    resourceName: review.clusterId,
+    details: {
+      reviewId: review.id,
+      action: review.action,
+      warnings: review.warnings,
+      request: review.request
+    }
+  });
+  return review;
+});
+
+app.post("/api/clusters/reviews/:reviewId/approve", async (request) => {
+  assertWriteAllowed(request, "cluster:write");
+  const params = z.object({ reviewId: z.string().min(1) }).parse(request.params);
+  const body = z.object({ comment: z.string().max(500).optional() }).parse(request.body ?? {});
+  const review = await getClusterChangeReview(params.reviewId);
+  if (!review) {
+    throw badRequest("Cluster change review was not found.");
+  }
+  if (review.status !== "pending") {
+    throw badRequest("Only pending cluster change reviews can be approved.");
+  }
+  const actor = actorFromRequest(request);
+  const approved = await markClusterChangeReview(review.id, "approved", actor, body.comment);
+  await recordAudit({
+    actor,
+    action: "cluster.review_approve",
+    clusterId: review.clusterId,
+    resourceType: "cluster",
+    resourceName: review.clusterId,
+    details: { reviewId: review.id, action: review.action, comment: body.comment }
+  });
+  return approved;
+});
+
+app.post("/api/clusters/reviews/:reviewId/reject", async (request) => {
+  assertWriteAllowed(request, "cluster:write");
+  const params = z.object({ reviewId: z.string().min(1) }).parse(request.params);
+  const body = z.object({ comment: z.string().max(500).optional() }).parse(request.body ?? {});
+  const review = await getClusterChangeReview(params.reviewId);
+  if (!review) {
+    throw badRequest("Cluster change review was not found.");
+  }
+  if (review.status !== "pending") {
+    throw badRequest("Only pending cluster change reviews can be rejected.");
+  }
+  const actor = actorFromRequest(request);
+  const rejected = await markClusterChangeReview(review.id, "rejected", actor, body.comment);
+  await recordAudit({
+    actor,
+    action: "cluster.review_reject",
+    clusterId: review.clusterId,
+    resourceType: "cluster",
+    resourceName: review.clusterId,
+    details: { reviewId: review.id, action: review.action, comment: body.comment }
+  });
+  return rejected;
+});
+
+app.post("/api/clusters/reviews/:reviewId/apply", async (request) => {
+  assertWriteAllowed(request, "cluster:write");
+  const params = z.object({ reviewId: z.string().min(1) }).parse(request.params);
+  const review = await getClusterChangeReview(params.reviewId);
+  if (!review) {
+    throw badRequest("Cluster change review was not found.");
+  }
+  if (review.status !== "approved") {
+    throw badRequest("Cluster change review must be approved before apply.");
+  }
+
+  const actor = actorFromRequest(request);
+  if (review.request.action === "upsert") {
+    const saved = await upsertClusterConfig(review.request.cluster, "api");
+    clusters = await listClusterConfigs();
+    const applied = await markClusterChangeReviewApplied(review.id, actor);
+    await recordAudit({
+      actor,
+      action: "cluster.review_apply",
+      clusterId: saved.id,
+      resourceType: "cluster",
+      resourceName: saved.id,
+      details: {
+        reviewId: review.id,
+        action: review.action,
+        cluster: sanitizeClusterConfig(saved)
+      }
+    });
+    return { applied: true, review: applied, cluster: toPublicCluster(saved) };
+  }
+
+  const existing = clusters.find((cluster) => cluster.id === review.clusterId);
+  if (!existing) {
+    throw badRequest("Cluster was not found.");
+  }
+  if ((existing as { source?: string }).source === "environment") {
+    throw forbidden("Environment-managed clusters cannot be deleted through the API.");
+  }
+  const deleted = await deleteClusterConfig(review.clusterId);
+  if (!deleted) {
+    throw badRequest("Cluster was not found.");
+  }
+  clusters = await listClusterConfigs();
+  const applied = await markClusterChangeReviewApplied(review.id, actor);
+  await recordAudit({
+    actor,
+    action: "cluster.review_apply",
+    clusterId: deleted.id,
+    resourceType: "cluster",
+    resourceName: deleted.id,
+    details: {
+      reviewId: review.id,
+      action: review.action,
+      cluster: sanitizeClusterConfig(deleted)
+    }
+  });
+  return { applied: true, review: applied, cluster: toPublicCluster(deleted) };
+});
 
 app.post("/api/clusters", async (request) => {
   assertWriteAllowed(request, "cluster:write");

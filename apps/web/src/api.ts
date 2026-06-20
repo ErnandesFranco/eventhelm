@@ -23,6 +23,45 @@ export type ClusterRegistration = {
   };
 };
 
+export type ClusterChangeReview = {
+  id: string;
+  clusterId: string;
+  action: "upsert" | "delete";
+  status: "pending" | "approved" | "rejected" | "applied";
+  actor: string;
+  request: {
+    action: "upsert" | "delete";
+    clusterId: string;
+    cluster?: {
+      id: string;
+      name: string;
+      brokers: string[];
+      ssl: boolean;
+      saslConfigured: boolean;
+      saslPasswordSource?: "inline" | "environment";
+    };
+  };
+  current?: Cluster;
+  proposed?: Cluster;
+  warnings: string[];
+  createdAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewComment?: string;
+  appliedBy?: string;
+  appliedAt?: string;
+};
+
+export type ClusterChangeReviewRequest =
+  | {
+      action: "upsert";
+      cluster: ClusterRegistration;
+    }
+  | {
+      action: "delete";
+      clusterId: string;
+    };
+
 export type CollectorState = {
   heartbeat: {
     collectorId: string;
@@ -434,6 +473,46 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 export const api = {
   clusters: () => request<Cluster[]>("/api/clusters"),
+  clusterReviews: (limit = 12) => request<ClusterChangeReview[]>(`/api/clusters/reviews?limit=${limit}`),
+  createClusterReview: (body: ClusterChangeReviewRequest) =>
+    request<ClusterChangeReview>("/api/clusters/reviews", {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify(body)
+    }),
+  approveClusterReview: (reviewId: string, comment?: string) =>
+    request<ClusterChangeReview>(`/api/clusters/reviews/${encodeURIComponent(reviewId)}/approve`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify({ comment })
+    }),
+  rejectClusterReview: (reviewId: string, comment?: string) =>
+    request<ClusterChangeReview>(`/api/clusters/reviews/${encodeURIComponent(reviewId)}/reject`, {
+      method: "POST",
+      headers: {
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
+      },
+      body: JSON.stringify({ comment })
+    }),
+  applyClusterReview: (reviewId: string) =>
+    request<{ applied: true; review: ClusterChangeReview; cluster: Cluster }>(
+      `/api/clusters/reviews/${encodeURIComponent(reviewId)}/apply`,
+      {
+        method: "POST",
+        headers: {
+          "x-eventhelm-actor": actor,
+          "x-eventhelm-confirm": "true"
+        },
+        body: JSON.stringify({})
+      }
+    ),
   upsertCluster: (body: ClusterRegistration) =>
     request<Cluster>("/api/clusters", {
       method: "POST",

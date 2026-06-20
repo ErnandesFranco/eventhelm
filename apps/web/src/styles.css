@@ -1349,6 +1349,10 @@ label {
   grid-template-columns: minmax(170px, 1.2fr) 100px minmax(145px, 0.9fr) minmax(145px, 1fr) 105px 170px;
 }
 
+.clusterReviewTable .tableRow {
+  grid-template-columns: minmax(230px, 1.2fr) 120px 150px minmax(240px, 1.2fr) 300px;
+}
+
 .collectorTable .tableRow {
   grid-template-columns: minmax(230px, 1.4fr) 90px 120px 130px 120px minmax(190px, 1fr) minmax(190px, 1fr);
 }
@@ -1397,11 +1401,13 @@ label {
 }
 
 .clusterListSurface,
-.clusterRegisterSurface {
+.clusterRegisterSurface,
+.clusterReviewSurface {
   min-width: 0;
 }
 
-.clusterTable small {
+.clusterTable small,
+.clusterReviewTable small {
   display: block;
   color: var(--muted);
   margin-top: 3px;

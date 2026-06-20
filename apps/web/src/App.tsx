@@ -41,6 +41,7 @@ import type {
   AgentRunRecord,
   AuditEvent,
   Cluster,
+  ClusterChangeReview,
   ClusterRegistration,
   CollectorState,
   ConsumerGroup,
@@ -2104,9 +2105,9 @@ function ClustersView({
 }) {
   const [query, setQuery] = useState("");
   const [form, setForm] = useState<ClusterFormState>(() => createEmptyClusterForm());
+  const [reviews, setReviews] = useState<ClusterChangeReview[]>([]);
   const [saving, setSaving] = useState(false);
-  const [deletingClusterId, setDeletingClusterId] = useState<string | null>(null);
-  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+  const [reviewBusyId, setReviewBusyId] = useState<string | null>(null);
   const [localError, setLocalError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const apiManagedCount = clusters.filter((cluster) => cluster.source === "api").length;
@@ -2119,6 +2120,18 @@ function ClustersView({
   const updateForm = (patch: Partial<ClusterFormState>) => {
     setForm((current) => ({ ...current, ...patch }));
   };
+
+  const refreshReviews = useCallback(async () => {
+    try {
+      setReviews(await api.clusterReviews());
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : String(caught));
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshReviews();
+  }, [refreshReviews]);
 
   const saveCluster = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -2163,10 +2176,10 @@ function ClustersView({
             }
           : undefined
       };
-      const cluster = await api.upsertCluster(body);
-      setNotice(`${cluster.name} saved.`);
+      const review = await api.createClusterReview({ action: "upsert", cluster: body });
+      setNotice(`Review ${review.id.slice(0, 8)} created for ${body.name}.`);
       setForm(createEmptyClusterForm());
-      await onChanged();
+      await refreshReviews();
     } catch (caught) {
       setLocalError(caught instanceof Error ? caught.message : String(caught));
     } finally {
@@ -2180,21 +2193,46 @@ function ClustersView({
     }
     setLocalError(null);
     setNotice(null);
-    if (pendingDeleteId !== cluster.id) {
-      setPendingDeleteId(cluster.id);
-      return;
-    }
-
-    setDeletingClusterId(cluster.id);
+    setReviewBusyId(cluster.id);
     try {
-      await api.deleteCluster(cluster.id);
-      setPendingDeleteId(null);
-      setNotice(`${cluster.name} removed.`);
-      await onChanged();
+      const review = await api.createClusterReview({ action: "delete", clusterId: cluster.id });
+      setNotice(`Review ${review.id.slice(0, 8)} created to delete ${cluster.name}.`);
+      await refreshReviews();
     } catch (caught) {
       setLocalError(caught instanceof Error ? caught.message : String(caught));
     } finally {
-      setDeletingClusterId(null);
+      setReviewBusyId(null);
+    }
+  };
+
+  const reviewClusterChange = async (reviewId: string, decision: "approved" | "rejected") => {
+    setLocalError(null);
+    setNotice(null);
+    setReviewBusyId(reviewId);
+    try {
+      const review =
+        decision === "approved" ? await api.approveClusterReview(reviewId) : await api.rejectClusterReview(reviewId);
+      setNotice(`Review ${review.id.slice(0, 8)} ${decision}.`);
+      await refreshReviews();
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setReviewBusyId(null);
+    }
+  };
+
+  const applyClusterChange = async (reviewId: string) => {
+    setLocalError(null);
+    setNotice(null);
+    setReviewBusyId(reviewId);
+    try {
+      const result = await api.applyClusterReview(reviewId);
+      setNotice(`Review ${result.review.id.slice(0, 8)} applied.`);
+      await Promise.all([refreshReviews(), onChanged()]);
+    } catch (caught) {
+      setLocalError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setReviewBusyId(null);
     }
   };
 
@@ -2240,7 +2278,6 @@ function ClustersView({
             {filtered.map((cluster) => {
               const source = cluster.source ?? "environment";
               const apiManaged = source === "api";
-              const deleteArmed = pendingDeleteId === cluster.id;
               return (
                 <div className="tableRow" data-testid={`cluster-row-${cluster.id}`} key={cluster.id}>
                   <span>
@@ -2279,15 +2316,15 @@ function ClustersView({
                       {cluster.id === selectedClusterId ? "Selected" : "Open"}
                     </button>
                     <button
-                      className={`secondaryButton compactButton ${deleteArmed ? "dangerButton" : ""}`}
+                      className="secondaryButton compactButton dangerButton"
                       data-testid={`cluster-delete-${cluster.id}`}
                       type="button"
-                      disabled={!apiManaged || deletingClusterId === cluster.id}
-                      title={apiManaged ? "Delete API-managed cluster" : "Environment-managed clusters are read-only"}
+                      disabled={!apiManaged || reviewBusyId === cluster.id}
+                      title={apiManaged ? "Create delete review" : "Environment-managed clusters are read-only"}
                       onClick={() => void removeCluster(cluster)}
                     >
-                      {deleteArmed ? <CheckCircle2 size={15} /> : <Trash2 size={15} />}
-                      {deleteArmed ? "Confirm" : "Delete"}
+                      <Trash2 size={15} />
+                      Review delete
                     </button>
                   </span>
                 </div>
@@ -2391,13 +2428,107 @@ function ClustersView({
               </button>
               <button className="primaryButton" type="submit" disabled={saving}>
                 <Plus size={17} />
-                {saving ? "Saving" : "Register cluster"}
+                {saving ? "Submitting" : "Submit review"}
               </button>
             </footer>
           </form>
         </section>
       </div>
+
+      <section className="surface clusterReviewSurface">
+        <SurfaceHeader icon={FileClock} title="Cluster Change Reviews" meta={`${reviews.length} retained`} />
+        <ClusterReviewTable
+          reviews={reviews}
+          busyId={reviewBusyId}
+          onApprove={(reviewId) => void reviewClusterChange(reviewId, "approved")}
+          onApply={(reviewId) => void applyClusterChange(reviewId)}
+          onReject={(reviewId) => void reviewClusterChange(reviewId, "rejected")}
+        />
+      </section>
     </div>
+  );
+}
+
+function ClusterReviewTable({
+  reviews,
+  busyId,
+  onApprove,
+  onApply,
+  onReject
+}: {
+  reviews: ClusterChangeReview[];
+  busyId: string | null;
+  onApprove: (reviewId: string) => void;
+  onApply: (reviewId: string) => void;
+  onReject: (reviewId: string) => void;
+}) {
+  if (reviews.length === 0) {
+    return <EmptyState title="No cluster change reviews retained yet" />;
+  }
+
+  return (
+    <DataTable className="clusterReviewTable">
+      <div className="tableRow tableHead">
+        <span>Request</span>
+        <span>Status</span>
+        <span>Author</span>
+        <span>Warnings</span>
+        <span>Actions</span>
+      </div>
+      {reviews.map((review) => (
+        <div className="tableRow" data-testid={`cluster-review-${review.id}`} key={review.id}>
+          <span>
+            <strong>{review.action === "upsert" ? review.proposed?.name ?? review.clusterId : "Delete cluster"}</strong>
+            <small className="mono">
+              target: {review.clusterId}
+            </small>
+            <small className="mono">
+              {review.action} review: {review.id.slice(0, 8)}
+            </small>
+          </span>
+          <StatusPill tone={clusterReviewTone(review.status)} icon={CircleDot}>
+            {review.status}
+          </StatusPill>
+          <span>
+            <strong>{review.actor}</strong>
+            <small>{formatDateTime(review.createdAt)}</small>
+          </span>
+          <span>
+            <strong>{review.warnings.length}</strong>
+            <small>{review.warnings[0] ?? "No warnings"}</small>
+          </span>
+          <span className="clusterActionGroup">
+            <button
+              className="secondaryButton compactButton"
+              type="button"
+              disabled={review.status !== "pending" || busyId === review.id}
+              onClick={() => onApprove(review.id)}
+            >
+              <CheckCircle2 size={15} />
+              Approve
+            </button>
+            <button
+              className="secondaryButton compactButton dangerButton"
+              type="button"
+              disabled={review.status !== "pending" || busyId === review.id}
+              onClick={() => onReject(review.id)}
+            >
+              <X size={15} />
+              Reject
+            </button>
+            <button
+              className="primaryButton compactButton"
+              type="button"
+              disabled={review.status !== "approved" || busyId === review.id}
+              onClick={() => onApply(review.id)}
+            >
+              <ArrowRightLeft size={15} />
+              Apply
+            </button>
+          </span>
+        </div>
+      ))}
+    </DataTable>
   );
 }
 
@@ -2779,6 +2910,16 @@ function lagTone(lag: number): "good" | "warning" | "bad" | "neutral" {
 
 function rebalanceStatusTone(status: RebalancePlanSummaryRecord["status"]): "good" | "warning" | "bad" | "neutral" {
   if (status === "executed" || status === "approved") {
+    return "good";
+  }
+  if (status === "rejected") {
+    return "bad";
+  }
+  return "warning";
+}
+
+function clusterReviewTone(status: ClusterChangeReview["status"]): "good" | "warning" | "bad" | "neutral" {
+  if (status === "applied" || status === "approved") {
     return "good";
   }
   if (status === "rejected") {

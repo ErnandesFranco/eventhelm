@@ -1,9 +1,14 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
+  createClusterChangeReview,
   deleteClusterConfig,
+  getClusterChangeReview,
   initializeClusterRegistry,
+  listClusterChangeReviews,
   listClusterConfigs,
+  markClusterChangeReview,
+  markClusterChangeReviewApplied,
   toPublicCluster,
   upsertClusterConfig
 } from "./clusterRegistry.js";
@@ -68,4 +73,44 @@ test("cluster registry bootstraps env clusters and masks public credentials", as
   assert.equal(deleted?.id, "registry-test-secure");
   assert.equal(afterDelete.some((cluster) => cluster.id === "registry-test-secure"), false);
   assert.equal(afterDelete.some((cluster) => cluster.id === "registry-test-secret-ref"), false);
+});
+
+test("cluster change reviews preserve sanitized public metadata through review lifecycle", async () => {
+  await initializeClusterRegistry([]);
+  const review = await createClusterChangeReview(
+    {
+      action: "upsert",
+      cluster: {
+        id: "review-test-secure",
+        name: "Review Test Secure",
+        brokers: ["kafka-review.example:9093"],
+        ssl: true,
+        sasl: {
+          mechanism: "scram-sha-512",
+          username: "eventhelm",
+          password: "do-not-expose"
+        }
+      }
+    },
+    "review-author",
+    await listClusterConfigs()
+  );
+
+  assert.equal(review.status, "pending");
+  assert.equal(review.request.cluster?.saslConfigured, true);
+  assert.equal(JSON.stringify(review).includes("do-not-expose"), false);
+  assert.ok(review.warnings.some((warning) => warning.includes("Inline SASL passwords")));
+
+  const approved = await markClusterChangeReview(review.id, "approved", "reviewer-a", "ship it");
+  const internal = await getClusterChangeReview(review.id);
+  const listed = await listClusterChangeReviews(5);
+
+  assert.equal(approved?.status, "approved");
+  assert.equal(approved?.reviewedBy, "reviewer-a");
+  assert.equal(internal?.request.action, "upsert");
+  assert.equal(listed[0]?.id, review.id);
+
+  const applied = await markClusterChangeReviewApplied(review.id, "applier-a");
+  assert.equal(applied?.status, "applied");
+  assert.equal(applied?.appliedBy, "applier-a");
 });

@@ -70,9 +70,12 @@ EventHelm bootstraps clusters from `EVENTHELM_CLUSTERS_JSON` and stores them in 
 - `GET /api/clusters` returns safe cluster metadata, including brokers, source, and whether SASL is configured.
 - `POST /api/clusters` registers or updates a cluster and requires write confirmation headers.
 - `DELETE /api/clusters/:clusterId` removes API-managed clusters; environment-managed clusters are protected.
+- `GET /api/clusters/reviews` lists retained cluster change reviews.
+- `POST /api/clusters/reviews` creates an upsert or delete review with sanitized current/proposed metadata.
+- `POST /api/clusters/reviews/:reviewId/approve`, `/reject`, and `/apply` move a reviewed cluster change through decision and execution.
 - Cluster read responses and audit records do not expose SASL passwords.
 - SASL registrations can use `passwordEnv` to reference an API-process environment variable instead of storing a raw password.
-- The console Clusters view can register, inspect, select, and remove API-managed clusters without exposing credentials.
+- The console Clusters view can inspect, select, and submit reviewed registrations or removals for API-managed clusters without exposing credentials.
 
 ## Consumer Lag
 

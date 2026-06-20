@@ -132,6 +132,33 @@ const migrations: DatabaseMigration[] = [
 
       create index if not exists rebalance_plans_reviewed_at_idx on rebalance_plans (reviewed_at desc);
     `
+  },
+  {
+    id: "004_cluster_change_reviews",
+    name: "Cluster registry change reviews",
+    sql: `
+      create table if not exists cluster_change_reviews (
+        id text primary key,
+        cluster_id text not null,
+        action text not null,
+        status text not null,
+        actor text not null,
+        request jsonb not null,
+        current_cluster jsonb,
+        proposed_cluster jsonb,
+        warnings text[] not null default '{}',
+        created_at timestamptz not null default now(),
+        reviewed_by text,
+        reviewed_at timestamptz,
+        review_comment text,
+        applied_by text,
+        applied_at timestamptz
+      );
+
+      create index if not exists cluster_change_reviews_cluster_id_idx on cluster_change_reviews (cluster_id);
+      create index if not exists cluster_change_reviews_status_idx on cluster_change_reviews (status);
+      create index if not exists cluster_change_reviews_created_at_idx on cluster_change_reviews (created_at desc);
+    `
   }
 ];
 

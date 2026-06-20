@@ -1,3 +1,4 @@
+import { nanoid } from "nanoid";
 import { persistenceMode, query } from "./db.js";
 import type { ClusterConfig } from "./types.js";
 
@@ -21,6 +22,45 @@ export type PublicCluster = {
   updatedAt?: string;
 };
 
+export type ClusterChangeAction = "upsert" | "delete";
+export type ClusterChangeReviewStatus = "pending" | "approved" | "rejected" | "applied";
+
+export type ClusterChangeReviewRequest =
+  | {
+      action: "upsert";
+      cluster: ClusterConfig;
+    }
+  | {
+      action: "delete";
+      clusterId: string;
+    };
+
+export type PublicClusterChangeReview = {
+  id: string;
+  clusterId: string;
+  action: ClusterChangeAction;
+  status: ClusterChangeReviewStatus;
+  actor: string;
+  request: {
+    action: ClusterChangeAction;
+    clusterId: string;
+    cluster?: ReturnType<typeof sanitizeClusterConfig>;
+  };
+  current?: PublicCluster;
+  proposed?: PublicCluster;
+  warnings: string[];
+  createdAt: string;
+  reviewedBy?: string;
+  reviewedAt?: string;
+  reviewComment?: string;
+  appliedBy?: string;
+  appliedAt?: string;
+};
+
+type ClusterChangeReviewRecord = Omit<PublicClusterChangeReview, "request"> & {
+  request: ClusterChangeReviewRequest;
+};
+
 type ClusterRow = {
   id: string;
   name: string;
@@ -32,7 +72,26 @@ type ClusterRow = {
   updated_at: Date;
 };
 
+type ClusterChangeReviewRow = {
+  id: string;
+  cluster_id: string;
+  action: ClusterChangeAction;
+  status: ClusterChangeReviewStatus;
+  actor: string;
+  request: ClusterChangeReviewRequest;
+  current_cluster: PublicCluster | null;
+  proposed_cluster: PublicCluster | null;
+  warnings: string[];
+  created_at: Date;
+  reviewed_by?: string;
+  reviewed_at?: Date;
+  review_comment?: string;
+  applied_by?: string;
+  applied_at?: Date;
+};
+
 const memoryClusters = new Map<string, ClusterRecord>();
+const memoryClusterChangeReviews = new Map<string, ClusterChangeReviewRecord>();
 
 export async function initializeClusterRegistry(seedClusters: ClusterConfig[]): Promise<ClusterRecord[]> {
   if (persistenceMode() === "postgres") {
@@ -108,6 +167,158 @@ export async function deleteClusterConfig(clusterId: string): Promise<ClusterRec
   return record;
 }
 
+export async function createClusterChangeReview(
+  request: ClusterChangeReviewRequest,
+  actor: string,
+  existingClusters: ClusterRecord[]
+): Promise<PublicClusterChangeReview> {
+  const now = new Date().toISOString();
+  const clusterId = request.action === "upsert" ? request.cluster.id : request.clusterId;
+  const currentRecord = existingClusters.find((cluster) => cluster.id === clusterId);
+  const current = currentRecord ? toPublicCluster(currentRecord) : undefined;
+  const proposed = request.action === "upsert" ? proposedPublicCluster(request.cluster, currentRecord, now) : undefined;
+  const warnings = clusterReviewWarnings(request, current);
+  const record: ClusterChangeReviewRecord = {
+    id: nanoid(),
+    clusterId,
+    action: request.action,
+    status: "pending",
+    actor,
+    request,
+    current,
+    proposed,
+    warnings,
+    createdAt: now
+  };
+
+  if (persistenceMode() === "postgres") {
+    const result = await query<ClusterChangeReviewRow>(
+      `insert into cluster_change_reviews
+        (id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at)
+       values ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+       returning id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at,
+        reviewed_by, reviewed_at, review_comment, applied_by, applied_at`,
+      [
+        record.id,
+        record.clusterId,
+        record.action,
+        record.status,
+        record.actor,
+        record.request,
+        record.current ?? null,
+        record.proposed ?? null,
+        record.warnings,
+        record.createdAt
+      ]
+    );
+    return toPublicClusterChangeReview(rowToClusterChangeReviewRecord(result.rows[0]));
+  }
+
+  memoryClusterChangeReviews.set(record.id, record);
+  return toPublicClusterChangeReview(record);
+}
+
+export async function listClusterChangeReviews(limit = 25): Promise<PublicClusterChangeReview[]> {
+  if (persistenceMode() === "postgres") {
+    const result = await query<ClusterChangeReviewRow>(
+      `select id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at,
+        reviewed_by, reviewed_at, review_comment, applied_by, applied_at
+       from cluster_change_reviews
+       order by created_at desc
+       limit $1`,
+      [limit]
+    );
+    return result.rows.map(rowToClusterChangeReviewRecord).map(toPublicClusterChangeReview);
+  }
+
+  return [...memoryClusterChangeReviews.values()]
+    .sort((left, right) => right.createdAt.localeCompare(left.createdAt))
+    .slice(0, limit)
+    .map(toPublicClusterChangeReview);
+}
+
+export async function getClusterChangeReview(reviewId: string): Promise<ClusterChangeReviewRecord | undefined> {
+  if (persistenceMode() === "postgres") {
+    const result = await query<ClusterChangeReviewRow>(
+      `select id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at,
+        reviewed_by, reviewed_at, review_comment, applied_by, applied_at
+       from cluster_change_reviews
+       where id = $1`,
+      [reviewId]
+    );
+    return result.rows[0] ? rowToClusterChangeReviewRecord(result.rows[0]) : undefined;
+  }
+
+  return memoryClusterChangeReviews.get(reviewId);
+}
+
+export async function markClusterChangeReview(
+  reviewId: string,
+  status: Extract<ClusterChangeReviewStatus, "approved" | "rejected">,
+  actor: string,
+  comment?: string
+): Promise<PublicClusterChangeReview | undefined> {
+  const reviewedAt = new Date().toISOString();
+  if (persistenceMode() === "postgres") {
+    const result = await query<ClusterChangeReviewRow>(
+      `update cluster_change_reviews
+       set status = $2,
+           reviewed_by = $3,
+           reviewed_at = $4,
+           review_comment = $5
+       where id = $1
+       returning id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at,
+        reviewed_by, reviewed_at, review_comment, applied_by, applied_at`,
+      [reviewId, status, actor, reviewedAt, comment ?? null]
+    );
+    return result.rows[0] ? toPublicClusterChangeReview(rowToClusterChangeReviewRecord(result.rows[0])) : undefined;
+  }
+
+  const record = memoryClusterChangeReviews.get(reviewId);
+  if (!record) {
+    return undefined;
+  }
+  const next: ClusterChangeReviewRecord = {
+    ...record,
+    status,
+    reviewedBy: actor,
+    reviewedAt,
+    reviewComment: comment
+  };
+  memoryClusterChangeReviews.set(reviewId, next);
+  return toPublicClusterChangeReview(next);
+}
+
+export async function markClusterChangeReviewApplied(reviewId: string, actor: string): Promise<PublicClusterChangeReview | undefined> {
+  const appliedAt = new Date().toISOString();
+  if (persistenceMode() === "postgres") {
+    const result = await query<ClusterChangeReviewRow>(
+      `update cluster_change_reviews
+       set status = 'applied',
+           applied_by = $2,
+           applied_at = $3
+       where id = $1
+       returning id, cluster_id, action, status, actor, request, current_cluster, proposed_cluster, warnings, created_at,
+        reviewed_by, reviewed_at, review_comment, applied_by, applied_at`,
+      [reviewId, actor, appliedAt]
+    );
+    return result.rows[0] ? toPublicClusterChangeReview(rowToClusterChangeReviewRecord(result.rows[0])) : undefined;
+  }
+
+  const record = memoryClusterChangeReviews.get(reviewId);
+  if (!record) {
+    return undefined;
+  }
+  const next: ClusterChangeReviewRecord = {
+    ...record,
+    status: "applied",
+    appliedBy: actor,
+    appliedAt
+  };
+  memoryClusterChangeReviews.set(reviewId, next);
+  return toPublicClusterChangeReview(next);
+}
+
 export function toPublicCluster(cluster: ClusterConfig | ClusterRecord): PublicCluster {
   const record = cluster as Partial<ClusterRecord>;
   return {
@@ -123,6 +334,67 @@ export function toPublicCluster(cluster: ClusterConfig | ClusterRecord): PublicC
   };
 }
 
+function toPublicClusterChangeReview(record: ClusterChangeReviewRecord): PublicClusterChangeReview {
+  return {
+    id: record.id,
+    clusterId: record.clusterId,
+    action: record.action,
+    status: record.status,
+    actor: record.actor,
+    request:
+      record.request.action === "upsert"
+        ? {
+            action: "upsert",
+            clusterId: record.clusterId,
+            cluster: sanitizeClusterConfig(record.request.cluster)
+          }
+        : {
+            action: "delete",
+            clusterId: record.clusterId
+          },
+    current: record.current,
+    proposed: record.proposed,
+    warnings: record.warnings,
+    createdAt: record.createdAt,
+    reviewedBy: record.reviewedBy,
+    reviewedAt: record.reviewedAt,
+    reviewComment: record.reviewComment,
+    appliedBy: record.appliedBy,
+    appliedAt: record.appliedAt
+  };
+}
+
+function proposedPublicCluster(cluster: ClusterConfig, current: ClusterRecord | undefined, now: string): PublicCluster {
+  return toPublicCluster({
+    ...cluster,
+    source: "api",
+    createdAt: current?.createdAt ?? now,
+    updatedAt: now
+  });
+}
+
+function clusterReviewWarnings(request: ClusterChangeReviewRequest, current: PublicCluster | undefined) {
+  const warnings: string[] = [];
+  if (request.action === "upsert") {
+    if (current?.source === "environment") {
+      warnings.push("Applying this review will replace an environment-managed cluster with an API-managed registry entry.");
+    }
+    if (request.cluster.sasl?.password && !request.cluster.sasl.passwordEnv) {
+      warnings.push("Inline SASL passwords are stored in the control-plane database; prefer passwordEnv for production clusters.");
+    }
+  }
+
+  if (request.action === "delete") {
+    if (!current) {
+      warnings.push("Cluster does not exist yet; apply will be rejected unless the registry changes before review.");
+    } else if (current.source === "environment") {
+      warnings.push("Environment-managed clusters cannot be deleted through the API.");
+    }
+  }
+
+  return warnings;
+}
+
 export function sanitizeClusterConfig(cluster: ClusterConfig) {
   return {
     id: cluster.id,
@@ -131,6 +403,26 @@ export function sanitizeClusterConfig(cluster: ClusterConfig) {
     ssl: cluster.ssl ?? false,
     saslConfigured: Boolean(cluster.sasl),
     saslPasswordSource: cluster.sasl ? saslPasswordSource(cluster.sasl) : undefined
+  };
+}
+
+function rowToClusterChangeReviewRecord(row: ClusterChangeReviewRow): ClusterChangeReviewRecord {
+  return {
+    id: row.id,
+    clusterId: row.cluster_id,
+    action: row.action,
+    status: row.status,
+    actor: row.actor,
+    request: row.request,
+    current: row.current_cluster ?? undefined,
+    proposed: row.proposed_cluster ?? undefined,
+    warnings: row.warnings,
+    createdAt: row.created_at.toISOString(),
+    reviewedBy: row.reviewed_by,
+    reviewedAt: row.reviewed_at?.toISOString(),
+    reviewComment: row.review_comment,
+    appliedBy: row.applied_by,
+    appliedAt: row.applied_at?.toISOString()
   };
 }
 
