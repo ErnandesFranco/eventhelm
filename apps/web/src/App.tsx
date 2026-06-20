@@ -571,8 +571,11 @@ function SecurityEnvelope({ security }: { security: SecurityStatus | null }) {
   const rows = [
     ["API mode", security.authMode],
     ["API token", security.apiTokenConfigured ? "configured" : "not configured"],
+    ["API token count", String(security.apiTokenCount)],
+    ["Configured scopes", security.configuredScopes.length ? security.configuredScopes.join(", ") : "none"],
     ["Collector token", security.collectorTokenConfigured ? "configured" : "not configured"],
     ["CORS origin", security.corsOrigin],
+    ["Read auth", security.readAuthRequired ? "required" : "not required"],
     ["Write confirmation", security.writeConfirmationRequired ? "required" : "not required"]
   ];
   return (

@@ -25,8 +25,11 @@ test("advisor sweeps include durable run metadata and severity summary", async (
       security: {
         authMode: "dev",
         apiTokenConfigured: false,
+        apiTokenCount: 0,
+        configuredScopes: [],
         collectorTokenConfigured: false,
         corsOrigin: "*",
+        readAuthRequired: false,
         writeConfirmationRequired: true
       },
       persistenceMode: "memory"

@@ -1,5 +1,26 @@
 import { z } from "zod";
-import type { ClusterConfig, SecurityMode, SecurityStatus } from "./types.js";
+import type { ApiTokenConfig, AuthScope, ClusterConfig, SecurityMode, SecurityStatus } from "./types.js";
+
+export const authScopes = [
+  "read",
+  "write",
+  "admin",
+  "cluster:write",
+  "topic:write",
+  "message:write",
+  "consumer:write",
+  "rebalance:plan",
+  "rebalance:review",
+  "rebalance:execute",
+  "agent:run"
+] as const satisfies readonly AuthScope[];
+
+const authScopeSchema = z.enum(authScopes);
+const apiTokenConfigSchema = z.object({
+  token: z.string().min(1),
+  actor: z.string().min(1).optional(),
+  scopes: z.array(authScopeSchema).min(1)
+});
 
 export const clusterSchema = z.object({
   id: z.string().min(1),
@@ -50,11 +71,15 @@ export function getPort(): number {
 export function getSecurityStatus(): SecurityStatus {
   const authMode = (env("EVENTHELM_AUTH_MODE", "BROKARA_AUTH_MODE") ?? "dev") as SecurityMode;
   const corsOrigin = env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN") ?? "*";
+  const apiTokens = getApiTokens();
   return {
     authMode,
-    apiTokenConfigured: Boolean(env("EVENTHELM_API_TOKEN", "BROKARA_API_TOKEN")),
+    apiTokenConfigured: apiTokens.length > 0,
+    apiTokenCount: apiTokens.length,
+    configuredScopes: [...new Set(apiTokens.flatMap((token) => token.scopes))].sort(),
     collectorTokenConfigured: Boolean(env("EVENTHELM_COLLECTOR_TOKEN", "BROKARA_COLLECTOR_TOKEN")),
     corsOrigin,
+    readAuthRequired: isReadAuthRequired(),
     writeConfirmationRequired: env("EVENTHELM_REQUIRE_WRITE_CONFIRMATION", "BROKARA_REQUIRE_WRITE_CONFIRMATION") === "true"
   };
 }
@@ -63,8 +88,35 @@ export function getApiToken(): string | undefined {
   return env("EVENTHELM_API_TOKEN", "BROKARA_API_TOKEN");
 }
 
+export function getApiTokens(): ApiTokenConfig[] {
+  const tokens: ApiTokenConfig[] = [];
+  const legacyToken = getApiToken();
+  if (legacyToken) {
+    tokens.push({ token: legacyToken, actor: "api-token", scopes: ["admin"] });
+  }
+
+  const rawTokens = env("EVENTHELM_API_TOKENS_JSON", "BROKARA_API_TOKENS_JSON");
+  if (rawTokens) {
+    const parsed = z.array(apiTokenConfigSchema).safeParse(JSON.parse(rawTokens));
+    if (!parsed.success) {
+      throw new Error(`Invalid EVENTHELM_API_TOKENS_JSON: ${parsed.error.message}`);
+    }
+    tokens.push(...parsed.data);
+  }
+
+  return tokens;
+}
+
 export function getCollectorToken(): string | undefined {
   return env("EVENTHELM_COLLECTOR_TOKEN", "BROKARA_COLLECTOR_TOKEN");
+}
+
+export function isReadAuthRequired(): boolean {
+  const configured = env("EVENTHELM_REQUIRE_READ_AUTH", "BROKARA_REQUIRE_READ_AUTH");
+  if (configured !== undefined) {
+    return configured === "true";
+  }
+  return (env("EVENTHELM_AUTH_MODE", "BROKARA_AUTH_MODE") ?? "dev") === "token";
 }
 
 export function getCorsOrigin(): string | string[] | true {

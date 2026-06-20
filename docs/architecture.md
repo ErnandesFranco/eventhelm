@@ -28,7 +28,9 @@ The API owns:
 - Audit events.
 - Postgres persistence for cluster configs, audit events, collector state, rebalance plans, advisor-agent runs, and findings.
 - Versioned database migrations with checksum validation in `schema_migrations`.
-- Later: RBAC, policy checks, approval workflows.
+- Later: OIDC/JWT identity, policy checks, approval workflows.
+
+Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
 
 ### Web Console
 
@@ -147,7 +149,7 @@ flowchart LR
 ## Near-Term Roadmap
 
 1. Add production deployment metadata and external secret references.
-2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
+2. Add OIDC/JWT, per-user RBAC, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add approval queues for offset resets, topic config changes, and topic mutations.
 5. Add reassignment throttling, cancellation, and JMX validation.

@@ -47,7 +47,7 @@ import {
   markRebalancePlanReviewed,
   saveRebalancePlan
 } from "./rebalancePlans.js";
-import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
+import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
 import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
 let clusters = loadClusters();
@@ -60,6 +60,12 @@ clusters = await initializeClusterRegistry(clusters);
 
 await app.register(cors, {
   origin: getCorsOrigin()
+});
+
+app.addHook("onRequest", async (request) => {
+  if (request.method === "GET" && request.url.startsWith("/api/")) {
+    assertReadAllowed(request);
+  }
 });
 
 function getCluster(clusterId: string) {
@@ -159,7 +165,7 @@ app.get("/api/security/status", async () => getSecurityStatus());
 app.get("/api/clusters", async () => clusters.map(toPublicCluster));
 
 app.post("/api/clusters", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "cluster:write");
   const body = clusterSchema
     .extend({
       id: z.string().regex(/^[a-z0-9][a-z0-9-]{1,62}$/, "Cluster IDs must be lowercase alphanumeric slugs.")
@@ -182,7 +188,7 @@ app.post("/api/clusters", async (request) => {
 });
 
 app.delete("/api/clusters/:clusterId", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "cluster:write");
   const params = z.object({ clusterId: z.string().min(1) }).parse(request.params);
   const existing = clusters.find((cluster) => cluster.id === params.clusterId);
   if (!existing) {
@@ -244,7 +250,7 @@ app.get("/api/clusters/:clusterId/topics/:topic/config", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/topics", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "topic:write");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
@@ -284,6 +290,7 @@ app.post("/api/clusters/:clusterId/topics", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/topics/:topic/config/preview", async (request) => {
+  assertReadAllowed(request);
   const params = z.object({ clusterId: z.string(), topic: z.string().min(1) }).parse(request.params);
   if (params.topic.startsWith("__")) {
     throw badRequest("EventHelm will not alter internal Kafka topic configs.");
@@ -293,7 +300,7 @@ app.post("/api/clusters/:clusterId/topics/:topic/config/preview", async (request
 });
 
 app.post("/api/clusters/:clusterId/topics/:topic/config/apply", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "topic:write");
   const params = z.object({ clusterId: z.string(), topic: z.string().min(1) }).parse(request.params);
   if (params.topic.startsWith("__")) {
     throw badRequest("EventHelm will not alter internal Kafka topic configs.");
@@ -345,13 +352,14 @@ app.get("/api/clusters/:clusterId/consumer-groups/:groupId/lag", async (request)
 });
 
 app.post("/api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/preview", async (request) => {
+  assertReadAllowed(request);
   const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
   const body = offsetResetRequestSchema.parse(request.body);
   return previewConsumerGroupOffsetReset(getCluster(params.clusterId), params.groupId, body);
 });
 
 app.post("/api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/execute", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "consumer:write");
   const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
   const body = offsetResetRequestSchema
     .and(
@@ -390,7 +398,7 @@ app.post("/api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/execute
 });
 
 app.post("/api/clusters/:clusterId/messages/produce", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "message:write");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
@@ -454,6 +462,7 @@ app.get("/api/clusters/:clusterId/rebalance/plans/:planId", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
+  assertWriteAllowed(request, "rebalance:plan");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const body = z
     .object({
@@ -507,7 +516,7 @@ app.get("/api/clusters/:clusterId/rebalance/status", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "rebalance:review");
   const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
   const body = z
     .object({
@@ -540,7 +549,7 @@ app.post("/api/clusters/:clusterId/rebalance/plans/:planId/approve", async (requ
 });
 
 app.post("/api/clusters/:clusterId/rebalance/plans/:planId/reject", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "rebalance:review");
   const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
   const body = z
     .object({
@@ -573,7 +582,7 @@ app.post("/api/clusters/:clusterId/rebalance/plans/:planId/reject", async (reque
 });
 
 app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "rebalance:execute");
   if (!isRebalanceExecutionEnabled()) {
     throw forbidden("Rebalance execution is locked. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true after approvals and RBAC are configured.");
   }
@@ -757,7 +766,7 @@ app.get("/api/clusters/:clusterId/agents", async (request) => {
 });
 
 app.post("/api/clusters/:clusterId/agents/run", async (request) => {
-  assertWriteAllowed(request);
+  assertWriteAllowed(request, "agent:run");
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const actor = actorFromRequest(request);
   const run = await buildAgentRun(params.clusterId, actor, "manual");

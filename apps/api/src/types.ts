@@ -315,12 +315,33 @@ export type ConsumerOffsetResetPreview = {
 };
 
 export type SecurityMode = "dev" | "token";
+export type AuthScope =
+  | "read"
+  | "write"
+  | "admin"
+  | "cluster:write"
+  | "topic:write"
+  | "message:write"
+  | "consumer:write"
+  | "rebalance:plan"
+  | "rebalance:review"
+  | "rebalance:execute"
+  | "agent:run";
+
+export type ApiTokenConfig = {
+  token: string;
+  actor?: string;
+  scopes: AuthScope[];
+};
 
 export type SecurityStatus = {
   authMode: SecurityMode;
   apiTokenConfigured: boolean;
+  apiTokenCount: number;
+  configuredScopes: AuthScope[];
   collectorTokenConfigured: boolean;
   corsOrigin: string;
+  readAuthRequired: boolean;
   writeConfirmationRequired: boolean;
 };
 

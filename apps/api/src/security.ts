@@ -1,5 +1,6 @@
 import type { FastifyRequest } from "fastify";
-import { getApiToken, getCollectorToken, getSecurityStatus } from "./config.js";
+import { getApiTokens, getCollectorToken, getSecurityStatus } from "./config.js";
+import type { ApiTokenConfig, AuthScope } from "./types.js";
 
 function unauthorized(message: string) {
   const error = new Error(message);
@@ -13,6 +14,12 @@ function preconditionRequired(message: string) {
   return error;
 }
 
+function forbidden(message: string) {
+  const error = new Error(message);
+  (error as Error & { statusCode: number }).statusCode = 403;
+  return error;
+}
+
 function bearerToken(request: FastifyRequest): string | undefined {
   const authorization = request.headers.authorization;
   if (!authorization?.startsWith("Bearer ")) {
@@ -21,15 +28,53 @@ function bearerToken(request: FastifyRequest): string | undefined {
   return authorization.slice("Bearer ".length);
 }
 
-export function actorFromRequest(request: FastifyRequest): string {
-  const actor = request.headers["x-eventhelm-actor"] ?? request.headers["x-brokara-actor"];
-  return Array.isArray(actor) ? actor[0] ?? "system" : actor ?? "system";
+function tokenConfigFromRequest(request: FastifyRequest): ApiTokenConfig | undefined {
+  const token = bearerToken(request);
+  if (!token) {
+    return undefined;
+  }
+  return getApiTokens().find((candidate) => candidate.token === token);
 }
 
-export function assertWriteAllowed(request: FastifyRequest) {
-  const security = getSecurityStatus();
-  if (security.authMode === "token" && bearerToken(request) !== getApiToken()) {
+function hasScope(config: ApiTokenConfig, scope: AuthScope) {
+  return config.scopes.includes("admin") || config.scopes.includes(scope) || (scope !== "read" && config.scopes.includes("write"));
+}
+
+function requireToken(request: FastifyRequest): ApiTokenConfig {
+  const tokenConfig = tokenConfigFromRequest(request);
+  if (!tokenConfig) {
     throw unauthorized("A valid EventHelm API bearer token is required.");
+  }
+  return tokenConfig;
+}
+
+export function actorFromRequest(request: FastifyRequest): string {
+  const actor = request.headers["x-eventhelm-actor"] ?? request.headers["x-brokara-actor"];
+  if (Array.isArray(actor)) {
+    return actor[0] ?? tokenConfigFromRequest(request)?.actor ?? "system";
+  }
+  return actor ?? tokenConfigFromRequest(request)?.actor ?? "system";
+}
+
+export function assertReadAllowed(request: FastifyRequest) {
+  const security = getSecurityStatus();
+  if (security.authMode !== "token" || !security.readAuthRequired) {
+    return;
+  }
+
+  const tokenConfig = requireToken(request);
+  if (!hasScope(tokenConfig, "read")) {
+    throw forbidden("This EventHelm API token is missing the read scope.");
+  }
+}
+
+export function assertWriteAllowed(request: FastifyRequest, scope: AuthScope = "write") {
+  const security = getSecurityStatus();
+  if (security.authMode === "token") {
+    const tokenConfig = requireToken(request);
+    if (!hasScope(tokenConfig, scope)) {
+      throw forbidden(`This EventHelm API token is missing the ${scope} scope.`);
+    }
   }
 
   const confirmed = request.headers["x-eventhelm-confirm"] ?? request.headers["x-brokara-confirm"];

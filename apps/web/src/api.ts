@@ -243,8 +243,11 @@ export type AuditFilters = {
 export type SecurityStatus = {
   authMode: "dev" | "token";
   apiTokenConfigured: boolean;
+  apiTokenCount: number;
+  configuredScopes: string[];
   collectorTokenConfigured: boolean;
   corsOrigin: string;
+  readAuthRequired: boolean;
   writeConfirmationRequired: boolean;
 };
 
@@ -533,7 +536,8 @@ export const api = {
     request<RebalancePlan>(`/api/clusters/${clusterId}/rebalance/plan`, {
       method: "POST",
       headers: {
-        "x-eventhelm-actor": actor
+        "x-eventhelm-actor": actor,
+        "x-eventhelm-confirm": "true"
       },
       body: JSON.stringify(body)
     }),

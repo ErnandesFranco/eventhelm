@@ -138,6 +138,8 @@ Current protections:
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
+- The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
+- In token mode, read auth is required by default unless `EVENTHELM_REQUIRE_READ_AUTH=false` is set.
 - Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.
 - The API tracks applied database migrations in `schema_migrations` and exposes schema status from `/health`.
 - Mutating requests support explicit confirmation headers.
@@ -148,7 +150,7 @@ Current protections:
 
 Still required before shared or production use:
 
-- OIDC/JWT user auth and RBAC.
+- OIDC/JWT user auth and per-user RBAC integration.
 - Retention policies and backup guidance for persisted control-plane state.
 - Approval workflows for production mutations.
 - TLS/SASL examples and external secret references.
