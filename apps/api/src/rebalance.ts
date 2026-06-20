@@ -208,6 +208,7 @@ export function buildRebalancePreflight({
 }): RebalancePreflight {
   const plan = planRecord.plan;
   const staleMovements = staleRebalanceMovements(plan, currentPlacements);
+  const degradedMovements = degradedRebalanceMovements(plan, currentPlacements);
   const unknownSizeMovements = plan.movements.filter((movement) => movement.estimatedSizeBytes === undefined);
   const plannedBrokerIds = plannedMovementBrokerIds(plan);
   const collectorByBroker = collectorsByBrokerId(collectors);
@@ -293,6 +294,20 @@ export function buildRebalancePreflight({
       }
     },
     {
+      id: "partition-health",
+      label: "Partition health",
+      status: degradedMovements.length > 0 ? "fail" : "pass",
+      detail:
+        degradedMovements.length > 0
+          ? `${degradedMovements.length} planned partition${
+              degradedMovements.length === 1 ? " is" : "s are"
+            } under-replicated or have offline replicas.`
+          : "Every planned partition is fully replicated with no offline replicas.",
+      evidence: {
+        degradedMovements: degradedMovements.slice(0, 5).map((movement) => `${movement.topic}:${movement.partition}`)
+      }
+    },
+    {
       id: "movement-size-coverage",
       label: "Movement size coverage",
       status: unknownSizeMovements.length > 0 ? "fail" : "pass",
@@ -353,6 +368,7 @@ export function buildRebalancePreflight({
     blockedReasons: failedChecks.map((check) => check.detail),
     warnings: warningChecks.map((check) => check.detail),
     staleMovementCount: staleMovements.length,
+    degradedMovementCount: degradedMovements.length,
     unknownSizeMovementCount: unknownSizeMovements.length,
     missingTelemetryBrokerIds,
     staleTelemetryBrokerIds,
@@ -365,6 +381,14 @@ export function staleRebalanceMovements(plan: RebalancePlan, placements: Partiti
   return plan.movements.filter((movement) => {
     const placement = placementByKey.get(partitionKey(movement.topic, movement.partition));
     return !placement || !sameReplicas(placement.replicas, movement.currentReplicas);
+  });
+}
+
+export function degradedRebalanceMovements(plan: RebalancePlan, placements: PartitionPlacement[]): RebalanceMovement[] {
+  const placementByKey = new Map(placements.map((placement) => [partitionKey(placement.topic, placement.partition), placement]));
+  return plan.movements.filter((movement) => {
+    const placement = placementByKey.get(partitionKey(movement.topic, movement.partition));
+    return Boolean(placement && (placement.isr.length < placement.replicas.length || placement.offlineReplicas.length > 0));
   });
 }
 

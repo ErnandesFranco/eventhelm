@@ -443,6 +443,7 @@ export type RebalancePreflight = {
   blockedReasons: string[];
   warnings: string[];
   staleMovementCount: number;
+  degradedMovementCount: number;
   unknownSizeMovementCount: number;
   missingTelemetryBrokerIds: number[];
   staleTelemetryBrokerIds: number[];

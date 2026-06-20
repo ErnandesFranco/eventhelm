@@ -123,7 +123,7 @@ EventHelm includes a disk-pressure rebalance planner:
 - The planner preserves replication factor, skips under-replicated partitions, prefers follower replica moves before leader moves, and scores targets by projected disk usage.
 - Execution requires an approved stored plan.
 - Execution is rejected while Kafka reports an active partition reassignment.
-- Execution runs the same preflight gate and rejects stale plans, missing movement byte estimates, missing or stale broker disk telemetry, inactive execution switches, and current replica placement drift before calling Kafka.
+- Execution runs the same preflight gate and rejects stale plans, degraded planned partitions, missing movement byte estimates, missing or stale broker disk telemetry, inactive execution switches, and current replica placement drift before calling Kafka.
 - Execution moves approved plans to `executing`; EventHelm marks them `executed` only after Kafka reports no active reassignment and the proposed replica placement is visible.
 - Execution is locked unless `EVENTHELM_ENABLE_REBALANCE_EXECUTION=true` is set.
 

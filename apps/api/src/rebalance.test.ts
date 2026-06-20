@@ -123,6 +123,37 @@ test("buildRebalancePreflight fails when reviewed replica placement is stale", (
   assert.equal(preflight.checks.find((check) => check.id === "placement-current")?.status, "fail");
 });
 
+test("buildRebalancePreflight fails when planned partitions are degraded", () => {
+  const plan = planFixture();
+  const movement = plan.movements[0];
+  assert.ok(movement);
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements.map((candidate) =>
+      candidate.topic === movement.topic && candidate.partition === movement.partition
+        ? {
+            ...candidate,
+            isr: candidate.replicas.slice(0, -1),
+            offlineReplicas: [candidate.replicas.at(-1) ?? candidate.replicas[0] ?? 0]
+          }
+        : candidate
+    ),
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(preflight.executable, false);
+  assert.equal(preflight.degradedMovementCount, 1);
+  assert.equal(preflight.checks.find((check) => check.id === "partition-health")?.status, "fail");
+});
+
 test("buildRebalancePreflight fails when planned brokers lack disk telemetry", () => {
   const plan = planFixture();
   const preflight = buildRebalancePreflight({
