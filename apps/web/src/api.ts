@@ -342,6 +342,26 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
+export type RebalancePlanStatus = "planned" | "executed";
+
+export type RebalancePlanRecord = {
+  id: string;
+  clusterId: string;
+  actor: string;
+  status: RebalancePlanStatus;
+  createdAt: string;
+  executedAt?: string;
+  plan: RebalancePlan;
+};
+
+export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
+  strategy: RebalancePlan["strategy"];
+  executable: boolean;
+  executionBlockedReason?: string;
+  summary: RebalancePlan["summary"];
+  warnings: string[];
+};
+
 const apiBaseUrl = import.meta.env.VITE_API_BASE_URL ?? "http://localhost:18080";
 const apiToken = import.meta.env.VITE_EVENTHELM_API_TOKEN ?? import.meta.env.VITE_BROKARA_API_TOKEN;
 const actor = import.meta.env.VITE_EVENTHELM_ACTOR ?? import.meta.env.VITE_BROKARA_ACTOR ?? "web-console";
@@ -477,6 +497,10 @@ export const api = {
       },
       body: JSON.stringify(body)
     }),
+  rebalancePlans: (clusterId: string, limit = 12) =>
+    request<RebalancePlanSummaryRecord[]>(`/api/clusters/${clusterId}/rebalance/plans?limit=${limit}`),
+  rebalancePlan: (clusterId: string, planId: string) =>
+    request<RebalancePlanRecord>(`/api/clusters/${clusterId}/rebalance/plans/${encodeURIComponent(planId)}`),
   executeRebalance: (clusterId: string, planId: string) =>
     request<{ accepted: boolean; planId: string }>(`/api/clusters/${clusterId}/rebalance/execute`, {
       method: "POST",

@@ -180,6 +180,26 @@ export type RebalancePlan = {
   warnings: string[];
 };
 
+export type RebalancePlanStatus = "planned" | "executed";
+
+export type RebalancePlanRecord = {
+  id: string;
+  clusterId: string;
+  actor: string;
+  status: RebalancePlanStatus;
+  createdAt: string;
+  executedAt?: string;
+  plan: RebalancePlan;
+};
+
+export type RebalancePlanSummaryRecord = Omit<RebalancePlanRecord, "plan"> & {
+  strategy: RebalancePlan["strategy"];
+  executable: boolean;
+  executionBlockedReason?: string;
+  summary: RebalancePlan["summary"];
+  warnings: string[];
+};
+
 export type ConsumerGroupSummary = {
   groupId: string;
   protocolType: string;

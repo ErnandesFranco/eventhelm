@@ -39,7 +39,7 @@ import {
   produceMessage
 } from "./kafka.js";
 import { buildDiskRebalancePlan } from "./rebalance.js";
-import { getRebalancePlan, markRebalancePlanExecuted, saveRebalancePlan } from "./rebalancePlans.js";
+import { getRebalancePlan, listRebalancePlans, markRebalancePlanExecuted, saveRebalancePlan } from "./rebalancePlans.js";
 import { actorFromRequest, assertCollectorAllowed, assertWriteAllowed } from "./security.js";
 import type { PartitionPlacement, RebalancePlan } from "./types.js";
 
@@ -423,6 +423,27 @@ app.get("/api/clusters/:clusterId/messages", async (request) => {
     .parse(request.query);
 
   return browseMessages(getCluster(params.clusterId), query);
+});
+
+app.get("/api/clusters/:clusterId/rebalance/plans", async (request) => {
+  const params = z.object({ clusterId: z.string() }).parse(request.params);
+  getCluster(params.clusterId);
+  const query = z
+    .object({
+      limit: z.coerce.number().int().min(1).max(100).default(25)
+    })
+    .parse(request.query);
+  return listRebalancePlans(params.clusterId, query.limit);
+});
+
+app.get("/api/clusters/:clusterId/rebalance/plans/:planId", async (request) => {
+  const params = z.object({ clusterId: z.string(), planId: z.string().min(1) }).parse(request.params);
+  getCluster(params.clusterId);
+  const storedPlan = await getRebalancePlan(params.planId);
+  if (!storedPlan || storedPlan.clusterId !== params.clusterId) {
+    throw badRequest("Rebalance plan was not found for this cluster.");
+  }
+  return storedPlan;
 });
 
 app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {

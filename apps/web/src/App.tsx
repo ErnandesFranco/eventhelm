@@ -48,6 +48,7 @@ import type {
   MessageRecord,
   Overview,
   RebalancePlan,
+  RebalancePlanSummaryRecord,
   SecurityStatus,
   Topic,
   TopicConfig,
@@ -639,10 +640,27 @@ function RebalanceView({
   const [sourceBrokerId, setSourceBrokerId] = useState("auto");
   const [selectedTargetIds, setSelectedTargetIds] = useState<number[]>([]);
   const [plan, setPlan] = useState<RebalancePlan | null>(null);
+  const [planHistory, setPlanHistory] = useState<RebalancePlanSummaryRecord[]>([]);
   const [busy, setBusy] = useState(false);
+  const [historyBusy, setHistoryBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const brokerIds = overview.brokers.map((broker) => broker.nodeId).sort((left, right) => left - right);
+
+  const refreshPlanHistory = useCallback(async () => {
+    setHistoryBusy(true);
+    try {
+      setPlanHistory(await api.rebalancePlans(clusterId));
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setHistoryBusy(false);
+    }
+  }, [clusterId]);
+
+  useEffect(() => {
+    void refreshPlanHistory();
+  }, [refreshPlanHistory]);
 
   function resetPlan() {
     setPlan(null);
@@ -669,6 +687,7 @@ function RebalanceView({
         targetBrokerIds: selectedTargetIds.length > 0 ? selectedTargetIds : undefined
       });
       setPlan(nextPlan);
+      await refreshPlanHistory();
       await onAuditChanged();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
@@ -685,6 +704,7 @@ function RebalanceView({
     setError(null);
     try {
       await api.executeRebalance(clusterId, plan.id);
+      await refreshPlanHistory();
       await onAuditChanged();
       await generatePlan();
     } catch (caught) {
@@ -700,6 +720,20 @@ function RebalanceView({
     await navigator.clipboard.writeText(JSON.stringify(plan.reassignment, null, 2));
     setCopied(true);
     window.setTimeout(() => setCopied(false), 1600);
+  }
+
+  async function loadStoredPlan(planId: string) {
+    setBusy(true);
+    setError(null);
+    try {
+      const stored = await api.rebalancePlan(clusterId, planId);
+      setPlan(stored.plan);
+      setCopied(false);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setBusy(false);
+    }
   }
 
   const brokerPressure = plan?.brokerPressure ?? brokerPressureFromOverview(overview);
@@ -912,7 +946,65 @@ function RebalanceView({
           <EmptyState title="Generate a plan to see proposed replica movements" />
         </section>
       )}
+
+      <section className="surface">
+        <SurfaceHeader icon={FileClock} title="Plan History" meta={historyBusy ? "loading" : `${planHistory.length} retained`} />
+        <RebalancePlanHistory history={planHistory} activePlanId={plan?.id} onLoad={(planId) => void loadStoredPlan(planId)} />
+      </section>
     </div>
+  );
+}
+
+function RebalancePlanHistory({
+  history,
+  activePlanId,
+  onLoad
+}: {
+  history: RebalancePlanSummaryRecord[];
+  activePlanId?: string;
+  onLoad: (planId: string) => void;
+}) {
+  if (history.length === 0) {
+    return <EmptyState title="No rebalance plans retained yet" />;
+  }
+
+  return (
+    <DataTable className="rebalanceHistoryTable">
+      <div className="tableRow tableHead">
+        <span>Plan</span>
+        <span>Status</span>
+        <span>Actor</span>
+        <span>Movements</span>
+        <span>Data</span>
+        <span>Risk</span>
+        <span>Action</span>
+      </div>
+      {history.map((record) => (
+        <div className="tableRow" key={record.id}>
+          <span>
+            <strong>{formatDateTime(record.createdAt)}</strong>
+            <small className="mono">{record.id.slice(0, 10)}</small>
+          </span>
+          <StatusPill tone={record.status === "executed" ? "good" : record.executable ? "warning" : "neutral"} icon={CircleDot}>
+            {record.status}
+          </StatusPill>
+          <span className="mono">{record.actor}</span>
+          <span>
+            <strong>{record.summary.movements}</strong>
+            <small>{record.summary.partitionsEvaluated} evaluated</small>
+          </span>
+          <span>{formatBytes(record.summary.estimatedBytesMoved)}</span>
+          <span>
+            <strong>{record.warnings.length} warnings</strong>
+            <small>{record.executionBlockedReason ?? (record.executable ? "ready" : "locked")}</small>
+          </span>
+          <button className="secondaryButton compactButton" type="button" disabled={activePlanId === record.id} onClick={() => onLoad(record.id)}>
+            <FileClock size={15} />
+            {activePlanId === record.id ? "Loaded" : "Load plan"}
+          </button>
+        </div>
+      ))}
+    </DataTable>
   );
 }
 

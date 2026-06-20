@@ -1,17 +1,5 @@
 import { persistenceMode, query } from "./db.js";
-import type { RebalancePlan } from "./types.js";
-
-type RebalancePlanStatus = "planned" | "executed";
-
-type RebalancePlanRecord = {
-  id: string;
-  clusterId: string;
-  actor: string;
-  status: RebalancePlanStatus;
-  plan: RebalancePlan;
-  createdAt: string;
-  executedAt?: string;
-};
+import type { RebalancePlan, RebalancePlanRecord, RebalancePlanStatus, RebalancePlanSummaryRecord } from "./types.js";
 
 type RebalancePlanRow = {
   id: string;
@@ -66,6 +54,26 @@ export async function getRebalancePlan(planId: string): Promise<RebalancePlanRec
   return plans.get(planId);
 }
 
+export async function listRebalancePlans(clusterId: string, limit = 25): Promise<RebalancePlanSummaryRecord[]> {
+  if (persistenceMode() === "postgres") {
+    const result = await query<RebalancePlanRow>(
+      `select id, cluster_id, actor, status, plan, created_at, executed_at
+       from rebalance_plans
+       where cluster_id = $1
+       order by created_at desc
+       limit $2`,
+      [clusterId, limit]
+    );
+    return result.rows.map((row) => toSummary(rowToRecord(row)));
+  }
+
+  return [...plans.values()]
+    .filter((record) => record.clusterId === clusterId)
+    .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
+    .slice(0, limit)
+    .map(toSummary);
+}
+
 export async function markRebalancePlanExecuted(planId: string): Promise<void> {
   const executedAt = new Date().toISOString();
 
@@ -99,5 +107,21 @@ function rowToRecord(row: RebalancePlanRow): RebalancePlanRecord {
     plan: row.plan,
     createdAt: row.created_at.toISOString(),
     executedAt: row.executed_at?.toISOString()
+  };
+}
+
+export function toSummary(record: RebalancePlanRecord): RebalancePlanSummaryRecord {
+  return {
+    id: record.id,
+    clusterId: record.clusterId,
+    actor: record.actor,
+    status: record.status,
+    createdAt: record.createdAt,
+    executedAt: record.executedAt,
+    strategy: record.plan.strategy,
+    executable: record.plan.executable,
+    executionBlockedReason: record.plan.executionBlockedReason,
+    summary: record.plan.summary,
+    warnings: record.plan.warnings
   };
 }

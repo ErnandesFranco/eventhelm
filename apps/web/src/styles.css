@@ -1365,6 +1365,16 @@ label {
   grid-template-columns: minmax(250px, 1.4fr) 100px 100px minmax(220px, 1fr) 100px 130px;
 }
 
+.rebalanceHistoryTable .tableRow {
+  grid-template-columns: 170px 120px 140px 130px 110px minmax(240px, 1fr) 130px;
+}
+
+.rebalanceHistoryTable small {
+  display: block;
+  color: var(--muted);
+  margin-top: 3px;
+}
+
 .strongText {
   font-weight: 800;
 }
