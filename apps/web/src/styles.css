@@ -507,12 +507,13 @@ label {
 }
 
 .topologyMap {
-  min-height: 384px;
+  position: relative;
+  min-height: 320px;
   display: grid;
-  grid-template-columns: 180px minmax(0, 1fr);
-  gap: 20px;
+  grid-template-columns: 220px minmax(0, 1fr);
+  gap: 18px;
   align-items: center;
-  padding: 20px;
+  padding: 18px;
   background-color: #fbfcfd;
   background-image:
     linear-gradient(#eef2f5 1px, transparent 1px),
@@ -520,94 +521,116 @@ label {
   background-size: 28px 28px;
 }
 
+.topologySurface {
+  grid-column: 1 / -1;
+}
+
 .topologyMap.compact,
 .topologyMap.dense {
-  grid-template-columns: 148px minmax(0, 1fr);
+  grid-template-columns: 200px minmax(0, 1fr);
   align-items: stretch;
 }
 
 .topologyMap.dense {
   min-height: 0;
-  grid-template-columns: 118px minmax(0, 1fr);
-  gap: 12px;
-  padding: 14px;
+  grid-template-columns: 190px minmax(0, 1fr);
+  gap: 14px;
+  padding: 16px;
 }
 
 .topologyHub {
-  width: 160px;
-  min-height: 154px;
+  min-height: 100%;
   display: grid;
-  place-items: center;
-  align-content: center;
-  gap: 12px;
-  border: 1px solid #b8c6d4;
+  align-content: start;
+  gap: 14px;
+  border: 1px solid #26394b;
   border-radius: var(--radius);
-  background: #ffffff;
-  color: var(--text);
-  font-weight: 820;
+  background: #101821;
+  color: #f4f7fa;
+  padding: 16px;
   box-shadow: 0 16px 40px rgba(22, 32, 42, 0.08);
 }
 
-.topologyMap.compact .topologyHub,
-.topologyMap.dense .topologyHub {
-  width: 108px;
-  min-height: 100%;
+.hubMark {
+  width: 58px;
+  height: 58px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #2d445a;
+  border-radius: 12px;
+  background: #172534;
+}
+
+.hubMark img {
+  width: 42px;
+  height: 42px;
+}
+
+.topologyHub strong {
+  font-size: 1.02rem;
+  line-height: 1.15;
+}
+
+.hubStats {
+  display: grid;
   gap: 8px;
 }
 
-.topologyHub img {
-  width: 58px;
-  height: 58px;
-}
-
-.topologyMap.compact .topologyHub img,
-.topologyMap.dense .topologyHub img {
-  width: 46px;
-  height: 46px;
-}
-
-.topologyHub small {
-  color: var(--muted);
+.hubStats span {
+  min-height: 28px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #26394b;
+  border-radius: 7px;
+  background: #142130;
+  color: #c9d5df;
+  padding: 0 9px;
   font-size: 0.78rem;
+  font-weight: 740;
 }
 
 .brokerLane {
   display: grid;
-  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(210px, 1fr));
+  gap: 10px;
+  align-content: start;
 }
 
 .brokerLane.compact,
 .brokerLane.dense {
-  grid-template-columns: repeat(auto-fit, minmax(168px, 1fr));
-  align-content: start;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
 }
 
 .brokerLane.dense {
-  grid-template-columns: repeat(auto-fit, minmax(106px, 1fr));
-  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 9px;
 }
 
 .brokerNode {
-  min-height: 92px;
+  position: relative;
+  min-height: 118px;
   display: grid;
-  gap: 8px;
+  grid-template-rows: auto auto 8px;
+  gap: 10px;
   border: 1px solid var(--line-strong);
   border-left-width: 4px;
   border-radius: var(--radius);
   background: #ffffff;
-  padding: 14px;
+  padding: 12px;
+  box-shadow: 0 10px 28px rgba(22, 32, 42, 0.06);
 }
 
 .brokerLane.compact .brokerNode,
 .brokerLane.dense .brokerNode {
-  min-height: 76px;
-  gap: 5px;
+  min-height: 104px;
+  gap: 8px;
   padding: 10px;
 }
 
 .brokerLane.dense .brokerNode {
-  min-height: 58px;
-  padding: 7px;
+  min-height: 98px;
+  padding: 9px;
 }
 
 .brokerNode.online {
@@ -619,25 +642,112 @@ label {
   border-left-color: var(--amber);
 }
 
-.brokerNode > div {
+.brokerNodeHeader {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  align-items: flex-start;
+  gap: 9px;
+  min-width: 0;
 }
 
-.brokerLane.dense .brokerNode > div {
-  gap: 6px;
+.brokerIcon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  background: #edf4ff;
+  color: var(--blue);
+}
+
+.brokerNodeHeader > div {
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.brokerNodeHeader strong,
+.brokerNodeHeader .mono {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.nodeRole {
+  margin-left: auto;
+  border: 1px solid #f0d49c;
+  border-radius: 999px;
+  background: var(--amber-soft);
+  color: #8a5200;
+  padding: 2px 7px;
+  font-size: 0.68rem;
+  font-weight: 840;
+  text-transform: uppercase;
+}
+
+.brokerSignalGrid {
+  display: grid;
+  gap: 5px;
+}
+
+.brokerSignalGrid span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 720;
+}
+
+.brokerSignalGrid svg {
+  flex: none;
+  color: #718093;
+}
+
+.brokerDiskMeter {
+  height: 8px;
+  border-radius: 999px;
+  background: #e3e9ef;
+  overflow: hidden;
+}
+
+.brokerDiskMeter span {
+  display: block;
+  height: 100%;
+  min-width: 2px;
+  border-radius: inherit;
+  background: var(--blue);
+}
+
+.brokerDiskMeter span.watch {
+  background: var(--amber);
+}
+
+.brokerDiskMeter span.high,
+.brokerDiskMeter span.critical {
+  background: var(--red);
+}
+
+.brokerLane.dense .brokerIcon {
+  width: 26px;
+  height: 26px;
 }
 
 .brokerLane.dense .brokerNode strong,
-.brokerLane.dense .brokerNode .mono {
-  font-size: 0.76rem;
+.brokerLane.dense .brokerNode .mono,
+.brokerLane.dense .brokerSignalGrid span {
+  font-size: 0.72rem;
 }
 
-.brokerLane.dense .statusPill {
-  min-height: 20px;
-  padding: 1px 6px;
-  font-size: 0.68rem;
+.brokerLane.dense .nodeRole {
+  padding: 1px 5px;
+  font-size: 0;
+}
+
+.brokerLane.dense .nodeRole::after {
+  content: "CTRL";
+  font-size: 0.62rem;
 }
 
 .mono {
@@ -1337,13 +1447,20 @@ label {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
-  .topologyMap {
+  .topologyMap,
+  .topologyMap.compact,
+  .topologyMap.dense {
     grid-template-columns: 1fr;
   }
 
   .topologyHub {
     width: 100%;
     min-height: 118px;
+    align-content: start;
+  }
+
+  .hubStats {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
   }
 }
 
@@ -1380,6 +1497,10 @@ label {
   .rebalanceControlGrid,
   .brokerPressureGrid,
   .formGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .hubStats {
     grid-template-columns: 1fr;
   }
 

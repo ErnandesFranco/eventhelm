@@ -330,27 +330,59 @@ function CommandCenter({
 function TopologyPanel({ overview }: { overview: Overview }) {
   const collectorByBroker = new Map(overview.collectors.map((collector) => [collector.heartbeat.brokerId, collector]));
   const density = overview.brokers.length > 8 ? "dense" : overview.brokers.length > 4 ? "compact" : "standard";
+  const onlineCollectors = overview.collectors.filter((collector) => collectorFreshness(collector) === "online").length;
   return (
     <div className={`topologyMap ${density}`}>
       <div className="topologyHub">
-        <img src={eventhelmMark} alt="" />
-        <span>EventHelm API</span>
-        <small>{overview.brokers.length} brokers</small>
+        <div className="hubMark">
+          <img src={eventhelmMark} alt="" />
+        </div>
+        <strong>EventHelm API</strong>
+        <div className="hubStats">
+          <span>
+            <Server size={13} />
+            {overview.brokers.length} brokers
+          </span>
+          <span>
+            <RadioTower size={13} />
+            {onlineCollectors}/{overview.brokers.length} collectors
+          </span>
+          <span>
+            <CircleDot size={13} />
+            controller {overview.controllerId ?? "unknown"}
+          </span>
+        </div>
       </div>
       <div className={`brokerLane ${density}`}>
         {overview.brokers.map((broker) => {
           const collector = collectorByBroker.get(String(broker.nodeId));
           const freshness = collector ? collectorFreshness(collector) : "missing";
+          const disk = collector?.lastSnapshot?.disk;
           return (
             <article className={`brokerNode ${freshness}`} key={broker.nodeId}>
-              <div>
-                <Server size={18} />
-                <strong>Broker {broker.nodeId}</strong>
+              <div className="brokerNodeHeader">
+                <span className="brokerIcon">
+                  <Server size={17} />
+                </span>
+                <div>
+                  <strong>Broker {broker.nodeId}</strong>
+                  <span className="mono">{broker.host}:{broker.port}</span>
+                </div>
+                {overview.controllerId === broker.nodeId ? <span className="nodeRole">controller</span> : null}
               </div>
-              <span className="mono">{broker.host}:{broker.port}</span>
-              <StatusPill tone={freshness === "online" ? "good" : "warning"} icon={CircleDot}>
-                {freshness === "missing" ? "collector missing" : freshness}
-              </StatusPill>
+              <div className="brokerSignalGrid">
+                <span>
+                  <RadioTower size={13} />
+                  {collector ? `${freshness} ${formatAge(collector.heartbeat.observedAt)}` : "collector missing"}
+                </span>
+                <span>
+                  <HardDrive size={13} />
+                  {disk ? `${disk.usedPercent.toFixed(1)}% used` : "disk unknown"}
+                </span>
+              </div>
+              <div className="brokerDiskMeter" aria-label={`Broker ${broker.nodeId} disk usage`}>
+                <span className={disk?.pressure ?? "unknown"} style={{ width: `${Math.min(100, disk?.usedPercent ?? 0)}%` }} />
+              </div>
             </article>
           );
         })}
