@@ -81,7 +81,7 @@ Current agents:
 
 Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
 
-Manual sweeps are stored as `agent_runs` records with durable run IDs, actors, triggers, severity summaries, per-agent scores, and the full run payload. Read-side automatic sweeps are ephemeral so GET requests do not create durable control-plane state. Sweeps inspect sanitized cluster registry metadata, cluster change reviews, rebalance plan history, collector coverage, audit activity, and security settings. Persisted findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
+Manual sweeps are stored as `agent_runs` records with durable run IDs, actors, triggers, severity summaries, per-agent scores, and the full run payload. Read-side automatic sweeps are ephemeral so GET requests do not create durable control-plane state. Sweeps inspect sanitized cluster registry metadata, cluster change reviews, rebalance plan history, in-flight rebalance execution state, collector coverage, audit activity, and security settings. Persisted findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
 
 ### Cluster Registry
 

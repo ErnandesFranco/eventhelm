@@ -400,6 +400,30 @@ function runOperator(context: AgentContext): AgentFinding[] {
     );
   }
 
+  const executingRebalancePlans = context.rebalancePlans.filter((plan) => plan.status === "executing" && plan.summary.movements > 0);
+  if (executingRebalancePlans.length > 0) {
+    const oldestExecution = [...executingRebalancePlans].sort(
+      (left, right) =>
+        new Date(left.executionStartedAt ?? left.createdAt).getTime() - new Date(right.executionStartedAt ?? right.createdAt).getTime()
+    )[0];
+    const startedAt = oldestExecution?.executionStartedAt ?? oldestExecution?.createdAt;
+    const executionAgeMinutes = startedAt ? Math.floor((Date.now() - Date.parse(startedAt)) / 60_000) : 0;
+    const staleExecution = executionAgeMinutes >= 30;
+    findings.push(
+      finding(
+        "operator",
+        staleExecution ? "high" : "medium",
+        "Rebalance execution is in progress",
+        `${executingRebalancePlans.length} rebalance plan${
+          executingRebalancePlans.length === 1 ? " is" : "s are"
+        } currently marked executing${startedAt ? `; oldest started ${executionAgeMinutes} minutes ago` : ""}.`,
+        "Watch Kafka reassignment status until completion reconciles, and investigate if the plan stays executing beyond the maintenance window.",
+        "rebalance",
+        oldestExecution?.id
+      )
+    );
+  }
+
   return findings;
 }
 

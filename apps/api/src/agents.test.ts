@@ -130,6 +130,27 @@ test("advisor sweeps flag review queues and direct cluster mutations", () => {
           estimatedBytesMoved: 5_000
         },
         warnings: []
+      },
+      {
+        id: "rebalance-plan-3",
+        clusterId: "agent-test",
+        actor: "operator",
+        status: "executing",
+        createdAt: "2024-01-01T00:00:00.000Z",
+        reviewedBy: "reviewer",
+        reviewedAt: "2024-01-01T00:05:00.000Z",
+        executionStartedBy: "executor",
+        executionStartedAt: "2024-01-01T00:10:00.000Z",
+        strategy: "disk-pressure",
+        executable: true,
+        summary: {
+          movements: 1,
+          partitionsEvaluated: 10,
+          sourceBrokerIds: [1],
+          targetBrokerIds: [4],
+          estimatedBytesMoved: 6_000
+        },
+        warnings: []
       }
     ],
     security: {
@@ -151,4 +172,5 @@ test("advisor sweeps flag review queues and direct cluster mutations", () => {
   assert.ok(run.findings.some((finding) => finding.id === "sentinel-cluster-review-contains-inline-credentials"));
   assert.ok(run.findings.some((finding) => finding.id === "sentinel-direct-cluster-registry-mutations-detected"));
   assert.ok(run.findings.some((finding) => finding.id === "operator-approved-rebalance-plans-are-waiting"));
+  assert.ok(run.findings.some((finding) => finding.id === "operator-rebalance-execution-is-in-progress"));
 });
