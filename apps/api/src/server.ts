@@ -953,6 +953,8 @@ async function buildAgentRun(clusterId: string, actor: string, trigger: "automat
         collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
         auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
         clusters: clusters.map(toPublicCluster),
+        clusterChangeReviews: (await listClusterChangeReviews(100)).filter((review) => review.clusterId === clusterId),
+        rebalancePlans: await listRebalancePlans(clusterId, 100),
         security: getSecurityStatus(),
         persistenceMode: persistenceMode()
       },

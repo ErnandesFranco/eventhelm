@@ -61,7 +61,7 @@ Current routes:
 - `GET /api/clusters/:clusterId/agents/runs/:runId`
 - `POST /api/clusters/:clusterId/agents/run`
 
-Every sweep returns a durable run ID, severity summary, per-agent scores, and finding evidence. In Postgres mode, runs are stored in `agent_runs` and findings are indexed in `agent_findings` so operators can review posture drift over time.
+Every sweep returns a durable run ID, severity summary, per-agent scores, and finding evidence. Sweeps include sanitized cluster registry data, cluster change reviews, rebalance plan history, collector coverage, audit activity, and security settings. In Postgres mode, runs are stored in `agent_runs` and findings are indexed in `agent_findings` so operators can review posture drift over time.
 
 ## Cluster Registry
 

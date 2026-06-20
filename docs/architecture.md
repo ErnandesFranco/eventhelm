@@ -81,7 +81,7 @@ Current agents:
 
 Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled monitors without changing the web contract.
 
-Each sweep is stored as an `agent_runs` record with a durable run ID, actor, trigger, severity summary, per-agent scores, and the full run payload. Individual findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
+Each sweep is stored as an `agent_runs` record with a durable run ID, actor, trigger, severity summary, per-agent scores, and the full run payload. Sweeps inspect sanitized cluster registry metadata, cluster change reviews, rebalance plan history, collector coverage, audit activity, and security settings. Individual findings are also indexed in `agent_findings` by agent, severity, and resource so the console can show recent posture history and future automation can query evidence without replaying every sweep.
 
 ### Cluster Registry
 

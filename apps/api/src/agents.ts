@@ -8,10 +8,11 @@ import type {
   AuditEvent,
   CollectorState,
   ConsumerGroupSummary,
+  RebalancePlanSummaryRecord,
   SecurityStatus,
   TopicSummary
 } from "./types.js";
-import type { PublicCluster } from "./clusterRegistry.js";
+import type { PublicCluster, PublicClusterChangeReview } from "./clusterRegistry.js";
 
 type AgentContext = {
   clusterId: string;
@@ -21,6 +22,8 @@ type AgentContext = {
   collectors: CollectorState[];
   auditEvents: AuditEvent[];
   clusters: PublicCluster[];
+  clusterChangeReviews: PublicClusterChangeReview[];
+  rebalancePlans: RebalancePlanSummaryRecord[];
   security: SecurityStatus;
   persistenceMode: "postgres" | "memory";
 };
@@ -132,6 +135,38 @@ function runNavigator(context: AgentContext): AgentFinding[] {
     );
   }
 
+  const pendingClusterReviews = context.clusterChangeReviews.filter((review) => review.status === "pending");
+  if (pendingClusterReviews.length > 0) {
+    findings.push(
+      finding(
+        "navigator",
+        "low",
+        "Cluster change reviews are waiting",
+        `${pendingClusterReviews.length} cluster registry change${pendingClusterReviews.length === 1 ? " is" : "s are"} pending operator review.`,
+        "Open the Clusters view and clear the review queue before handoff or production rollout.",
+        "cluster",
+        pendingClusterReviews[0]?.clusterId
+      )
+    );
+  }
+
+  const plannedRebalanceReviews = context.rebalancePlans.filter((plan) => plan.status === "planned" && plan.summary.movements > 0);
+  if (plannedRebalanceReviews.length > 0) {
+    findings.push(
+      finding(
+        "navigator",
+        "medium",
+        "Rebalance plans need an operator decision",
+        `${plannedRebalanceReviews.length} generated rebalance plan${
+          plannedRebalanceReviews.length === 1 ? " has" : "s have"
+        } partition movements but no approval or rejection.`,
+        "Open the Rebalance history, load each plan, run preflight, then approve or reject it explicitly.",
+        "rebalance",
+        plannedRebalanceReviews[0]?.id
+      )
+    );
+  }
+
   return findings;
 }
 
@@ -188,6 +223,42 @@ function runSentinel(context: AgentContext): AgentFinding[] {
         "Move Kafka SASL passwords to passwordEnv references backed by deployment secrets before sharing the control plane.",
         "cluster",
         inlineSaslClusters[0]?.id
+      )
+    );
+  }
+
+  const inlineCredentialReviews = context.clusterChangeReviews.filter((review) =>
+    review.warnings.some((warning) => warning.toLowerCase().includes("inline sasl"))
+  );
+  if (inlineCredentialReviews.length > 0) {
+    findings.push(
+      finding(
+        "sentinel",
+        "medium",
+        "Cluster review contains inline credentials",
+        `${inlineCredentialReviews.length} retained cluster change review${
+          inlineCredentialReviews.length === 1 ? " warns" : "s warn"
+        } about inline SASL password storage.`,
+        "Reject or replace those reviews with passwordEnv-backed registrations before applying them.",
+        "cluster",
+        inlineCredentialReviews[0]?.clusterId
+      )
+    );
+  }
+
+  const directClusterMutations = context.auditEvents.filter((event) => ["cluster.upsert", "cluster.delete"].includes(event.action));
+  if (directClusterMutations.length > 0) {
+    findings.push(
+      finding(
+        "sentinel",
+        "medium",
+        "Direct cluster registry mutations detected",
+        `${directClusterMutations.length} recent cluster registry mutation${
+          directClusterMutations.length === 1 ? " bypassed" : "s bypassed"
+        } the review queue.`,
+        "Use cluster change reviews for registrations and removals; keep direct write routes for break-glass automation only.",
+        "cluster",
+        directClusterMutations[0]?.resourceName
       )
     );
   }
@@ -308,6 +379,23 @@ function runOperator(context: AgentContext): AgentFinding[] {
         "Review broker host pressure before rebalancing or scaling consumers on the affected node.",
         "broker",
         worst?.heartbeat.brokerId
+      )
+    );
+  }
+
+  const approvedRebalancePlans = context.rebalancePlans.filter((plan) => plan.status === "approved" && plan.summary.movements > 0);
+  if (approvedRebalancePlans.length > 0) {
+    findings.push(
+      finding(
+        "operator",
+        "medium",
+        "Approved rebalance plans are waiting",
+        `${approvedRebalancePlans.length} approved rebalance plan${
+          approvedRebalancePlans.length === 1 ? " is" : "s are"
+        } waiting for execution preflight or operator cleanup.`,
+        "Load the approved plan, run preflight against live Kafka state, then execute, reject, or supersede it.",
+        "rebalance",
+        approvedRebalancePlans[0]?.id
       )
     );
   }
