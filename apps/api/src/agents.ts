@@ -17,6 +17,7 @@ type AgentContext = {
   collectors: CollectorState[];
   auditEvents: AuditEvent[];
   security: SecurityStatus;
+  persistenceMode: "postgres" | "memory";
 };
 
 const advisorAgents: AdvisorAgent[] = [
@@ -267,25 +268,39 @@ function runSteward(context: AgentContext): AgentFinding[] {
 function runScribe(context: AgentContext): AgentFinding[] {
   const findings: AgentFinding[] = [];
 
-  findings.push(
-    finding(
-      "scribe",
-      "medium",
-      "Control-plane state is still in memory",
-      "Audit events, collectors, and advisor findings disappear when the API restarts.",
-      "Add Postgres persistence before this becomes a real multi-user control plane.",
-      "platform"
-    )
-  );
+  if (context.persistenceMode === "memory") {
+    findings.push(
+      finding(
+        "scribe",
+        "medium",
+        "Control-plane state is still in memory",
+        "Audit events, collectors, and advisor findings disappear when the API restarts.",
+        "Add Postgres persistence before this becomes a real multi-user control plane.",
+        "platform"
+      )
+    );
+  } else {
+    findings.push(
+      finding(
+        "scribe",
+        "info",
+        "Postgres persistence is enabled",
+        "Audit events and broker collector state survive API restarts.",
+        "Add retention policies, backups, and migration version tracking before production rollout.",
+        "platform"
+      )
+    );
+  }
 
   if (context.auditEvents.length > 0) {
+    const auditStore = context.persistenceMode === "postgres" ? "stored in Postgres" : "available in memory";
     findings.push(
       finding(
         "scribe",
         "info",
         "Audit events are being captured",
-        `${context.auditEvents.length} audit events are available in memory.`,
-        "Persist them and add filters by actor, action, resource, and cluster.",
+        `${context.auditEvents.length} audit events are ${auditStore}.`,
+        "Add filters by actor, action, resource, and cluster so operators can investigate changes quickly.",
         "audit"
       )
     );

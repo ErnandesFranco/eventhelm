@@ -1,6 +1,23 @@
 name: eventhelm
 
 services:
+  db:
+    image: postgres:16-alpine
+    container_name: eventhelm-db
+    environment:
+      POSTGRES_DB: eventhelm
+      POSTGRES_USER: eventhelm
+      POSTGRES_PASSWORD: eventhelm-local-password
+    ports:
+      - "127.0.0.1:15432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U eventhelm -d eventhelm"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    volumes:
+      - eventhelm-db-data:/var/lib/postgresql/data
+
   kafka-1:
     image: apache/kafka:4.0.0
     container_name: eventhelm-kafka-1
@@ -262,14 +279,18 @@ services:
       dockerfile: apps/api/Dockerfile
     container_name: eventhelm-api
     depends_on:
-      - kafka-init
+      db:
+        condition: service_healthy
+      kafka-init:
+        condition: service_started
     ports:
       - "127.0.0.1:18080:8080"
     environment:
       API_PORT: 8080
       EVENTHELM_AUTH_MODE: dev
-      EVENTHELM_CORS_ORIGIN: http://localhost:15173
+      EVENTHELM_CORS_ORIGIN: http://localhost:15173,http://127.0.0.1:15173
       EVENTHELM_COLLECTOR_TOKEN: local-dev-collector-token
+      EVENTHELM_DATABASE_URL: postgres://eventhelm:eventhelm-local-password@db:5432/eventhelm
       EVENTHELM_CLUSTERS_JSON: '[{"id":"local","name":"Local Kafka Lab","brokers":["kafka-1:9092","kafka-2:9092","kafka-3:9092","kafka-4:9092","kafka-5:9092","kafka-6:9092","kafka-7:9092","kafka-8:9092","kafka-9:9092","kafka-10:9092"]}]'
 
   web:
@@ -475,6 +496,7 @@ services:
       - kafka-10-data:/broker-data:ro
 
 volumes:
+  eventhelm-db-data:
   kafka-1-data:
   kafka-2-data:
   kafka-3-data:

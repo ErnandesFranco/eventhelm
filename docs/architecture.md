@@ -23,7 +23,8 @@ The API owns:
 - Advisor-agent checks.
 - Security posture reporting.
 - Audit events.
-- Later: persistence, RBAC, policy checks, approval workflows.
+- Postgres persistence for audit events and collector state.
+- Later: RBAC, policy checks, approval workflows.
 
 ### Web Console
 
@@ -101,7 +102,7 @@ flowchart LR
 
 ## Near-Term Roadmap
 
-1. Persist clusters, audit logs, collectors, snapshots, agent runs, and findings in Postgres.
+1. Persist configured clusters, agent runs, findings, and rebalance plans in Postgres.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add lag and offset operations with dry-run/approval workflows.

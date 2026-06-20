@@ -5,6 +5,7 @@ import { listAdvisorAgents, runAdvisorAgents } from "./agents.js";
 import { recordAudit, listAuditEvents } from "./audit.js";
 import { upsertHeartbeat, upsertSnapshot, listCollectors } from "./collectors.js";
 import { getCorsOrigin, getPort, getSecurityStatus, isRebalanceExecutionEnabled, loadClusters } from "./config.js";
+import { closeDatabase, initDatabase, persistenceMode } from "./db.js";
 import {
   alterPartitionAssignments,
   browseMessages,
@@ -22,6 +23,8 @@ const clusters = loadClusters();
 const app = Fastify({
   logger: true
 });
+
+await initDatabase();
 
 await app.register(cors, {
   origin: getCorsOrigin()
@@ -52,6 +55,7 @@ function forbidden(message: string) {
 app.get("/health", async () => ({
   ok: true,
   service: "eventhelm-api",
+  persistence: persistenceMode(),
   timestamp: new Date().toISOString()
 }));
 
@@ -84,7 +88,7 @@ app.get("/api/clusters/:clusterId/overview", async (request) => {
     internalTopicCount: topics.filter((topic) => topic.isInternal).length,
     consumerGroupCount: groups.length,
     brokers: description.brokers,
-    collectors: listCollectors().filter((collector) => collector.heartbeat.clusterId === cluster.id)
+    collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === cluster.id)
   };
 });
 
@@ -121,7 +125,7 @@ app.post("/api/clusters/:clusterId/topics", async (request) => {
   }
 
   const created = await createTopic(cluster, body);
-  recordAudit({
+  await recordAudit({
     actor: actorFromRequest(request),
     action: "topic.create",
     clusterId: params.clusterId,
@@ -155,7 +159,7 @@ app.post("/api/clusters/:clusterId/messages/produce", async (request) => {
   }
 
   const result = await produceMessage(getCluster(params.clusterId), body);
-  recordAudit({
+  await recordAudit({
     actor: actorFromRequest(request),
     action: "message.produce",
     clusterId: params.clusterId,
@@ -202,7 +206,7 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
   const plan = buildDiskRebalancePlan({
     clusterId: params.clusterId,
     brokers: description.brokers,
-    collectors: listCollectors().filter((collector) => collector.heartbeat.clusterId === params.clusterId),
+    collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === params.clusterId),
     placements,
     input: {
       ...body,
@@ -210,7 +214,7 @@ app.post("/api/clusters/:clusterId/rebalance/plan", async (request) => {
     }
   });
 
-  recordAudit({
+  await recordAudit({
     actor: actorFromRequest(request),
     action: "rebalance.plan",
     clusterId: params.clusterId,
@@ -250,7 +254,7 @@ app.post("/api/clusters/:clusterId/rebalance/execute", async (request) => {
     .parse(request.body);
 
   await alterPartitionAssignments(getCluster(params.clusterId), body.topics);
-  recordAudit({
+  await recordAudit({
     actor: actorFromRequest(request),
     action: "rebalance.execute",
     clusterId: params.clusterId,
@@ -333,7 +337,7 @@ app.post("/api/clusters/:clusterId/agents/run", async (request) => {
   assertWriteAllowed(request);
   const params = z.object({ clusterId: z.string() }).parse(request.params);
   const run = await buildAgentRun(params.clusterId);
-  recordAudit({
+  await recordAudit({
     actor: actorFromRequest(request),
     action: "agents.run",
     clusterId: params.clusterId,
@@ -356,11 +360,18 @@ async function buildAgentRun(clusterId: string) {
     brokerCount: description.brokers.length,
     topics,
     consumerGroups,
-    collectors: listCollectors().filter((collector) => collector.heartbeat.clusterId === clusterId),
-    auditEvents: listAuditEvents().filter((event) => !event.clusterId || event.clusterId === clusterId),
-    security: getSecurityStatus()
+    collectors: (await listCollectors()).filter((collector) => collector.heartbeat.clusterId === clusterId),
+    auditEvents: (await listAuditEvents()).filter((event) => !event.clusterId || event.clusterId === clusterId),
+    security: getSecurityStatus(),
+    persistenceMode: persistenceMode()
   });
 }
 
 const port = getPort();
 await app.listen({ host: "0.0.0.0", port });
+
+for (const signal of ["SIGINT", "SIGTERM"] as const) {
+  process.on(signal, () => {
+    void closeDatabase().finally(() => process.exit(0));
+  });
+}

@@ -8,6 +8,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 
 - A TypeScript API that connects to Kafka through KafkaJS.
 - A React console for command overview, live topology, topics, records, consumer groups, collectors, audit, and advisor agents.
+- Postgres persistence for audit events and broker collector state.
 - One broker-local collector per broker in the Docker lab.
 - Disk-aware partition rebalance planning from broker collector telemetry.
 - Rules-based advisor agents for UX, security, SRE, governance, and maintainership.
@@ -24,6 +25,7 @@ Then open:
 
 - Console: http://localhost:15173
 - API health: http://localhost:18080/health
+- Postgres: `localhost:15432`
 
 The Docker lab exposes Kafka brokers only on localhost:
 
@@ -74,13 +76,14 @@ Current protections:
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
+- Audit and collector state are persisted in Postgres in the Docker lab.
 - Mutating requests support explicit confirmation headers.
 - Partition reassignment execution is locked by default with `EVENTHELM_ENABLE_REBALANCE_EXECUTION=false`.
 
 Still required before shared or production use:
 
 - OIDC/JWT user auth and RBAC.
-- Persistent audit logs and collector state.
+- Retention policies, backup guidance, and migration versioning for persisted control-plane state.
 - Approval workflows for production mutations.
 - TLS/SASL examples and secret references.
 - Rate limits and per-user quotas.

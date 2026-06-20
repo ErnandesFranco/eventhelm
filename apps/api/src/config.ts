@@ -47,11 +47,12 @@ export function getPort(): number {
 
 export function getSecurityStatus(): SecurityStatus {
   const authMode = (env("EVENTHELM_AUTH_MODE", "BROKARA_AUTH_MODE") ?? "dev") as SecurityMode;
+  const corsOrigin = env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN") ?? "*";
   return {
     authMode,
     apiTokenConfigured: Boolean(env("EVENTHELM_API_TOKEN", "BROKARA_API_TOKEN")),
     collectorTokenConfigured: Boolean(env("EVENTHELM_COLLECTOR_TOKEN", "BROKARA_COLLECTOR_TOKEN")),
-    corsOrigin: env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN") ?? "*",
+    corsOrigin,
     writeConfirmationRequired: env("EVENTHELM_REQUIRE_WRITE_CONFIRMATION", "BROKARA_REQUIRE_WRITE_CONFIRMATION") === "true"
   };
 }
@@ -64,10 +65,24 @@ export function getCollectorToken(): string | undefined {
   return env("EVENTHELM_COLLECTOR_TOKEN", "BROKARA_COLLECTOR_TOKEN");
 }
 
-export function getCorsOrigin(): string | true {
-  return env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN") ?? true;
+export function getCorsOrigin(): string | string[] | true {
+  const corsOrigin = env("EVENTHELM_CORS_ORIGIN", "BROKARA_CORS_ORIGIN");
+  if (!corsOrigin) {
+    return true;
+  }
+
+  const origins = corsOrigin
+    .split(",")
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  return origins.length > 1 ? origins : origins[0] ?? true;
 }
 
 export function isRebalanceExecutionEnabled(): boolean {
   return env("EVENTHELM_ENABLE_REBALANCE_EXECUTION", "BROKARA_ENABLE_REBALANCE_EXECUTION") === "true";
+}
+
+export function getDatabaseUrl(): string | undefined {
+  return env("EVENTHELM_DATABASE_URL", "DATABASE_URL");
 }
