@@ -364,7 +364,10 @@ function CommandCenter({
   security: SecurityStatus | null;
   onRunAgents: () => Promise<void>;
 }) {
-  const freshCollectors = overview.collectors.filter((collector) => collectorFreshness(collector) === "online").length;
+  const liveBrokerIds = new Set(overview.brokers.map((broker) => String(broker.nodeId)));
+  const freshCollectors = overview.collectors.filter(
+    (collector) => liveBrokerIds.has(collector.heartbeat.brokerId) && collectorFreshness(collector) === "online"
+  ).length;
   const highestFinding = agentRun?.findings[0];
 
   return (
