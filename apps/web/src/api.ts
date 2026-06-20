@@ -689,8 +689,21 @@ export const api = {
       },
       body: JSON.stringify(body)
     }),
-  rebalancePlans: (clusterId: string, limit = 12) =>
-    request<RebalancePlanSummaryRecord[]>(`/api/clusters/${clusterId}/rebalance/plans?limit=${limit}`),
+  rebalancePlans: (clusterId: string, options: number | { limit?: number; status?: RebalancePlanStatus; query?: string } = 12) => {
+    const filters = typeof options === "number" ? { limit: options } : options;
+    const query = new URLSearchParams();
+    if (filters.limit !== undefined) {
+      query.set("limit", String(filters.limit));
+    }
+    if (filters.status) {
+      query.set("status", filters.status);
+    }
+    if (filters.query) {
+      query.set("query", filters.query);
+    }
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request<RebalancePlanSummaryRecord[]>(`/api/clusters/${clusterId}/rebalance/plans${suffix}`);
+  },
   rebalanceStatus: (clusterId: string) =>
     request<RebalanceExecutionStatus>(`/api/clusters/${clusterId}/rebalance/status`),
   rebalancePlan: (clusterId: string, planId: string) =>

@@ -747,7 +747,7 @@ function RebalanceView({
   const refreshPlanHistory = useCallback(async () => {
     setHistoryBusy(true);
     try {
-      setPlanHistory(await api.rebalancePlans(clusterId));
+      setPlanHistory(await api.rebalancePlans(clusterId, 50));
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {

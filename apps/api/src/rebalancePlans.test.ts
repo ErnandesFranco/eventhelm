@@ -60,6 +60,18 @@ test("rebalance plan history lists summaries and preserves full plan lookup", as
   const rejected = await markRebalancePlanReviewed(rejectedPlan.id, "rejected", "reviewer-b");
   assert.equal(rejected?.status, "rejected");
   assert.equal(rejected?.reviewedBy, "reviewer-b");
+
+  const rejectedHistory = await listRebalancePlans("history-cluster", { status: "rejected", query: "reviewer-b", limit: 10 });
+  assert.deepEqual(
+    rejectedHistory.map((record) => record.id),
+    [rejectedPlan.id]
+  );
+
+  const searchHistory = await listRebalancePlans("history-cluster", { query: "orders.created", limit: 10 });
+  assert.ok(searchHistory.length >= 2);
+
+  const emptyHistory = await listRebalancePlans("history-cluster", { query: "not-in-any-retained-plan", limit: 10 });
+  assert.equal(emptyHistory.length, 0);
 });
 
 function rebalancePlan(id: string): RebalancePlan {

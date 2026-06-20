@@ -682,10 +682,12 @@ app.get("/api/clusters/:clusterId/rebalance/plans", async (request) => {
   getCluster(params.clusterId);
   const query = z
     .object({
-      limit: z.coerce.number().int().min(1).max(100).default(25)
+      limit: z.coerce.number().int().min(1).max(100).default(25),
+      status: z.enum(["planned", "approved", "rejected", "executing", "executed"]).optional(),
+      query: z.string().trim().min(1).max(200).optional()
     })
     .parse(request.query);
-  return listRebalancePlans(params.clusterId, query.limit);
+  return listRebalancePlans(params.clusterId, query);
 });
 
 app.get("/api/clusters/:clusterId/rebalance/plans/:planId", async (request) => {

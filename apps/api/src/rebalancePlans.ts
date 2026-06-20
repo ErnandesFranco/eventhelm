@@ -18,6 +18,18 @@ type RebalancePlanRow = {
 
 const plans = new Map<string, RebalancePlanRecord>();
 
+type RebalancePlanListOptions = {
+  limit?: number;
+  status?: RebalancePlanStatus;
+  query?: string;
+};
+
+type NormalizedRebalancePlanListOptions = {
+  limit: number;
+  status?: RebalancePlanStatus;
+  query?: string;
+};
+
 export async function saveRebalancePlan(plan: RebalancePlan, actor: string): Promise<RebalancePlanRecord> {
   const record: RebalancePlanRecord = {
     id: plan.id,
@@ -59,23 +71,45 @@ export async function getRebalancePlan(planId: string): Promise<RebalancePlanRec
   return plans.get(planId);
 }
 
-export async function listRebalancePlans(clusterId: string, limit = 25): Promise<RebalancePlanSummaryRecord[]> {
+export async function listRebalancePlans(clusterId: string, optionsOrLimit: number | RebalancePlanListOptions = 25): Promise<RebalancePlanSummaryRecord[]> {
+  const options = normalizeListOptions(optionsOrLimit);
   if (persistenceMode() === "postgres") {
+    const filters = [`cluster_id = $1`];
+    const values: unknown[] = [clusterId];
+    if (options.status) {
+      values.push(options.status);
+      filters.push(`status = $${values.length}`);
+    }
+    if (options.query) {
+      values.push(`%${options.query}%`);
+      filters.push(
+        `(id ilike $${values.length}
+          or actor ilike $${values.length}
+          or status::text ilike $${values.length}
+          or coalesce(reviewed_by, '') ilike $${values.length}
+          or coalesce(execution_started_by, '') ilike $${values.length}
+          or coalesce(review_comment, '') ilike $${values.length}
+          or coalesce(plan::text, '') ilike $${values.length})`
+      );
+    }
+    values.push(options.limit);
     const result = await query<RebalancePlanRow>(
       `select id, cluster_id, actor, status, plan, created_at, execution_started_at, execution_started_by, executed_at, reviewed_by, reviewed_at, review_comment
        from rebalance_plans
-       where cluster_id = $1
+       where ${filters.join(" and ")}
        order by created_at desc
-       limit $2`,
-      [clusterId, limit]
+       limit $${values.length}`,
+      values
     );
     return result.rows.map((row) => toSummary(rowToRecord(row)));
   }
 
   return [...plans.values()]
     .filter((record) => record.clusterId === clusterId)
+    .filter((record) => !options.status || record.status === options.status)
+    .filter((record) => !options.query || rebalancePlanMatchesQuery(record, options.query))
     .sort((left, right) => new Date(right.createdAt).getTime() - new Date(left.createdAt).getTime())
-    .slice(0, limit)
+    .slice(0, options.limit)
     .map(toSummary);
 }
 
@@ -274,4 +308,36 @@ export function toSummary(record: RebalancePlanRecord): RebalancePlanSummaryReco
     summary: record.plan.summary,
     warnings: record.plan.warnings
   };
+}
+
+function normalizeListOptions(optionsOrLimit: number | RebalancePlanListOptions): NormalizedRebalancePlanListOptions {
+  if (typeof optionsOrLimit === "number") {
+    return { limit: clampLimit(optionsOrLimit) };
+  }
+  return {
+    ...optionsOrLimit,
+    query: optionsOrLimit.query?.trim() || undefined,
+    limit: clampLimit(optionsOrLimit.limit ?? 25)
+  };
+}
+
+function clampLimit(limit: number) {
+  return Math.max(1, Math.min(100, Math.trunc(limit)));
+}
+
+function rebalancePlanMatchesQuery(record: RebalancePlanRecord, query: string) {
+  const normalizedQuery = query.toLowerCase();
+  return [
+    record.id,
+    record.actor,
+    record.status,
+    record.reviewedBy,
+    record.executionStartedBy,
+    record.reviewComment,
+    JSON.stringify(record.plan)
+  ]
+    .filter((value) => value !== undefined && value !== null)
+    .join(" ")
+    .toLowerCase()
+    .includes(normalizedQuery);
 }

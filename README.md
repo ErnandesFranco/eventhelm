@@ -118,7 +118,7 @@ EventHelm includes a disk-pressure rebalance planner:
 - Collector heartbeat and snapshot writes ignore stale `observedAt` samples so older telemetry cannot overwrite fresher broker state.
 - The planner only uses source and target brokers with fresh broker-local disk telemetry, ignores stale log-dir byte scans, and marks plans with missing movement byte estimates as dry-run only.
 - `POST /api/clusters/:clusterId/rebalance/plan` generates a Kafka reassignment payload.
-- `GET /api/clusters/:clusterId/rebalance/plans` lists retained plan summaries.
+- `GET /api/clusters/:clusterId/rebalance/plans` lists retained plan summaries and supports `status`, `query`, and `limit` filters.
 - `GET /api/clusters/:clusterId/rebalance/plans/:planId` returns the full stored plan for review or reload.
 - `GET /api/clusters/:clusterId/rebalance/plans/:planId/preflight` checks the approved plan against live Kafka state and collector freshness.
 - `GET /api/clusters/:clusterId/rebalance/status` reports active Kafka partition reassignments.
