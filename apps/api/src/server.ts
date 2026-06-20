@@ -118,7 +118,8 @@ function assertClusterSecretPolicy(cluster: ClusterConfig) {
 
 async function buildStoredRebalancePreflight(clusterId: string, storedPlan: RebalancePlanRecord) {
   const cluster = getCluster(clusterId);
-  const [reassignmentStatus, currentPlacements, collectors] = await Promise.all([
+  const [description, reassignmentStatus, currentPlacements, collectors] = await Promise.all([
+    describeCluster(cluster),
     describePartitionReassignments(cluster),
     listPartitionPlacements(cluster, true),
     listCollectors()
@@ -128,6 +129,7 @@ async function buildStoredRebalancePreflight(clusterId: string, storedPlan: Reba
     executionEnabled: isRebalanceExecutionEnabled(),
     reassignmentStatus,
     currentPlacements,
+    brokers: description.brokers,
     collectors: collectors.filter((collector) => collector.heartbeat.clusterId === clusterId)
   });
 }

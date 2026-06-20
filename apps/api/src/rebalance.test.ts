@@ -174,6 +174,28 @@ test("buildRebalancePreflight fails when planned brokers lack disk telemetry", (
   assert.equal(preflight.checks.find((check) => check.id === "collector-coverage")?.status, "fail");
 });
 
+test("buildRebalancePreflight fails when planned brokers leave live metadata", () => {
+  const plan = planFixture();
+  const preflight = buildRebalancePreflight({
+    planRecord: planRecord(plan, "approved"),
+    executionEnabled: true,
+    reassignmentStatus: inactiveReassignmentStatus(),
+    currentPlacements: placements,
+    brokers: brokers.filter((broker) => broker.nodeId !== 4),
+    collectors: [
+      collector(1, 90),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10)
+    ],
+    now: new Date()
+  });
+
+  assert.equal(preflight.executable, false);
+  assert.deepEqual(preflight.missingBrokerIds, [4]);
+  assert.equal(preflight.checks.find((check) => check.id === "broker-membership")?.status, "fail");
+});
+
 test("buildRebalancePreflight fails when planned movements lack byte estimates", () => {
   const plan = buildDiskRebalancePlan({
     clusterId: "local",

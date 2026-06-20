@@ -445,6 +445,7 @@ export type RebalancePreflight = {
   staleMovementCount: number;
   degradedMovementCount: number;
   unknownSizeMovementCount: number;
+  missingBrokerIds: number[];
   missingTelemetryBrokerIds: number[];
   staleTelemetryBrokerIds: number[];
   checks: RebalancePreflightCheck[];

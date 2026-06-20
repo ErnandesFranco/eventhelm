@@ -194,6 +194,7 @@ export function buildRebalancePreflight({
   executionEnabled,
   reassignmentStatus,
   currentPlacements,
+  brokers,
   collectors,
   now = new Date(),
   collectorMaxAgeMs = REBALANCE_COLLECTOR_MAX_AGE_MS
@@ -202,6 +203,7 @@ export function buildRebalancePreflight({
   executionEnabled: boolean;
   reassignmentStatus: RebalanceExecutionStatus;
   currentPlacements: PartitionPlacement[];
+  brokers?: Broker[];
   collectors: CollectorState[];
   now?: Date;
   collectorMaxAgeMs?: number;
@@ -211,6 +213,8 @@ export function buildRebalancePreflight({
   const degradedMovements = degradedRebalanceMovements(plan, currentPlacements);
   const unknownSizeMovements = plan.movements.filter((movement) => movement.estimatedSizeBytes === undefined);
   const plannedBrokerIds = plannedMovementBrokerIds(plan);
+  const liveBrokerIds = brokers ? new Set(brokers.map((broker) => broker.nodeId)) : undefined;
+  const missingBrokerIds = liveBrokerIds ? plannedBrokerIds.filter((brokerId) => !liveBrokerIds.has(brokerId)) : [];
   const collectorByBroker = collectorsByBrokerId(collectors);
   const missingTelemetryBrokerIds = plannedBrokerIds.filter((brokerId) => !collectorByBroker.get(brokerId)?.lastSnapshot?.disk);
   const staleTelemetryBrokerIds = plannedBrokerIds.filter((brokerId) => {
@@ -308,6 +312,19 @@ export function buildRebalancePreflight({
       }
     },
     {
+      id: "broker-membership",
+      label: "Broker membership",
+      status: missingBrokerIds.length > 0 ? "fail" : "pass",
+      detail:
+        missingBrokerIds.length > 0
+          ? `Broker${missingBrokerIds.length === 1 ? "" : "s"} ${missingBrokerIds.join(", ")} in the plan are not present in live Kafka metadata.`
+          : "Every source and target broker in the plan is present in live Kafka metadata.",
+      evidence: {
+        brokerIds: plannedBrokerIds,
+        missingBrokerIds
+      }
+    },
+    {
       id: "movement-size-coverage",
       label: "Movement size coverage",
       status: unknownSizeMovements.length > 0 ? "fail" : "pass",
@@ -370,6 +387,7 @@ export function buildRebalancePreflight({
     staleMovementCount: staleMovements.length,
     degradedMovementCount: degradedMovements.length,
     unknownSizeMovementCount: unknownSizeMovements.length,
+    missingBrokerIds,
     missingTelemetryBrokerIds,
     staleTelemetryBrokerIds,
     checks
