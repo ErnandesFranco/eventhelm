@@ -21,13 +21,17 @@ export async function upsertHeartbeat(heartbeat: CollectorHeartbeat): Promise<Co
         heartbeat = excluded.heartbeat,
         observed_at = excluded.observed_at,
         updated_at = now()
+       where collector_states.observed_at <= excluded.observed_at
        returning collector_id, heartbeat, last_snapshot`,
       [heartbeat.collectorId, heartbeat.clusterId, heartbeat.brokerId, heartbeat, heartbeat.observedAt]
     );
-    return rowToCollectorState(result.rows[0]);
+    return result.rows[0] ? rowToCollectorState(result.rows[0]) : getCollectorState(heartbeat.collectorId);
   }
 
   const existing = collectors.get(heartbeat.collectorId);
+  if (existing && Date.parse(existing.heartbeat.observedAt) > Date.parse(heartbeat.observedAt)) {
+    return existing;
+  }
   const next: CollectorState = {
     heartbeat,
     lastSnapshot: existing?.lastSnapshot
@@ -49,12 +53,17 @@ export async function upsertSnapshot(snapshot: CollectorSnapshot): Promise<Colle
         last_snapshot = excluded.last_snapshot,
         observed_at = excluded.observed_at,
         updated_at = now()
+       where collector_states.observed_at <= excluded.observed_at
        returning collector_id, heartbeat, last_snapshot`,
       [snapshot.collectorId, snapshot.clusterId, snapshot.brokerId, heartbeatFromSnapshot(snapshot), snapshot, snapshot.observedAt]
     );
-    return rowToCollectorState(result.rows[0]);
+    return result.rows[0] ? rowToCollectorState(result.rows[0]) : getCollectorState(snapshot.collectorId);
   }
 
+  const existing = collectors.get(snapshot.collectorId);
+  if (existing && Date.parse(existing.heartbeat.observedAt) > Date.parse(snapshot.observedAt)) {
+    return existing;
+  }
   const next: CollectorState = {
     heartbeat: heartbeatFromSnapshot(snapshot),
     lastSnapshot: snapshot
@@ -76,6 +85,25 @@ export async function listCollectors(): Promise<CollectorState[]> {
   return [...collectors.values()].sort((left, right) =>
     left.heartbeat.collectorId.localeCompare(right.heartbeat.collectorId)
   );
+}
+
+async function getCollectorState(collectorId: string): Promise<CollectorState> {
+  if (persistenceMode() === "postgres") {
+    const result = await query<CollectorRow>(
+      `select collector_id, heartbeat, last_snapshot
+       from collector_states
+       where collector_id = $1`,
+      [collectorId]
+    );
+    if (result.rows[0]) {
+      return rowToCollectorState(result.rows[0]);
+    }
+  }
+  const state = collectors.get(collectorId);
+  if (state) {
+    return state;
+  }
+  throw new Error(`Collector '${collectorId}' was not found.`);
 }
 
 function heartbeatFromSnapshot(snapshot: CollectorSnapshot): CollectorHeartbeat {
