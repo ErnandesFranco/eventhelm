@@ -46,7 +46,7 @@ Future collector responsibilities:
 
 - JMX metric scraping.
 - Disk, network, and broker host telemetry.
-- Per-log-dir and per-partition size telemetry for exact data-movement planning.
+- Multi-log-dir attribution and JMX cross-checks for exact data-movement planning.
 - Broker config drift detection.
 - Local log signal extraction.
 - Optional Kafka Connect and Schema Registry probes.
@@ -70,11 +70,11 @@ Future agent executors can use LLMs, GitHub context, CI logs, docs, or scheduled
 EventHelm treats rebalancing as a plan-review-apply workflow:
 
 1. Broker-local collectors report disk capacity, free space, used space, and pressure bands from the mounted broker log directory.
-2. The API reads Kafka partition placement metadata and generates a reassignment plan that moves replicas away from disk-pressured brokers.
-3. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
-4. Execution stays locked by default until production auth, approvals, and RBAC are configured.
-
-The first planner uses replica placement plus broker disk pressure. It does not yet know each partition's exact byte size because KafkaJS does not expose `DescribeLogDirs`; the collector roadmap includes log-dir or JMX probes to close that gap.
+2. Collectors scan partition log directories and report per-partition byte sizes.
+3. The API reads Kafka partition placement metadata and generates a reassignment plan that moves replicas away from disk-pressured brokers.
+4. The planner scores target brokers by projected disk usage and estimates bytes moved from collector log-dir telemetry.
+5. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
+6. Execution stays locked by default until production auth, approvals, and RBAC are configured.
 
 ## Deployment Shape
 
@@ -106,6 +106,6 @@ flowchart LR
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
 4. Add lag and offset operations with dry-run/approval workflows.
-5. Add exact partition-size telemetry and throttled reassignment execution.
+5. Add reassignment throttling, cancellation, and JMX validation.
 6. Add GitOps import/export for topics and connector configs.
 7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

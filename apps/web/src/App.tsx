@@ -568,9 +568,10 @@ function RebalanceView({
       <section className="surface rebalanceControls">
         <SurfaceHeader icon={HardDrive} title="Planning Controls" meta="dry-run first" />
         <div className="rebalanceControlGrid">
-          <label>
+          <label htmlFor="rebalance-max-movements">
             Max movements
             <input
+              id="rebalance-max-movements"
               type="number"
               min="1"
               max="100"
@@ -581,9 +582,10 @@ function RebalanceView({
               }}
             />
           </label>
-          <label>
+          <label htmlFor="rebalance-high-watermark">
             High-water mark %
             <input
+              id="rebalance-high-watermark"
               type="number"
               min="50"
               max="99"
@@ -594,9 +596,10 @@ function RebalanceView({
               }}
             />
           </label>
-          <label>
+          <label htmlFor="rebalance-min-gap">
             Imbalance trigger %
             <input
+              id="rebalance-min-gap"
               type="number"
               min="1"
               max="60"
@@ -607,9 +610,10 @@ function RebalanceView({
               }}
             />
           </label>
-          <label>
-            Source broker
+          <div className="fieldControl">
+            <label htmlFor="rebalance-source-broker">Source broker</label>
             <select
+              id="rebalance-source-broker"
               value={sourceBrokerId}
               onChange={(event) => {
                 setSourceBrokerId(event.target.value);
@@ -624,7 +628,7 @@ function RebalanceView({
                 </option>
               ))}
             </select>
-          </label>
+          </div>
           <label className="switch">
             <input
               checked={includeInternal}
@@ -673,6 +677,7 @@ function RebalanceView({
             </div>
             <div className="brokerPressureMeta">
               <span>{broker.disk ? formatBytes(broker.disk.freeBytes) : "unknown"} free</span>
+              <span>{broker.logBytes !== undefined ? `${formatBytes(broker.logBytes)} logs` : "no log sizes"}</span>
               <span>{broker.disk ? `sampled ${formatAge(broker.disk.sampledAt)}` : "no disk sample"}</span>
               <span>{placementComputed ? `${broker.replicaCount} replicas / ${broker.leaderCount} leaders` : "placement after plan"}</span>
             </div>
@@ -686,6 +691,7 @@ function RebalanceView({
             <Metric icon={ArrowRightLeft} label="Movements" value={plan.summary.movements} detail="planned replica moves" />
             <Metric icon={HardDrive} label="Max disk" value={formatPercent(plan.summary.maxUsedPercent)} detail="highest broker usage" />
             <Metric icon={HardDrive} label="Min disk" value={formatPercent(plan.summary.minUsedPercent)} detail="lowest broker usage" />
+            <Metric icon={Database} label="Data moved" value={formatBytes(plan.summary.estimatedBytesMoved)} detail="estimated log bytes" />
             <Metric icon={Database} label="Partitions" value={plan.summary.partitionsEvaluated} detail="evaluated for placement" />
             <Metric icon={ShieldCheck} label="Execution" value={plan.executable ? "Ready" : "Locked"} detail={plan.executable ? "backend accepts apply" : "requires opt-in"} />
           </section>
@@ -707,6 +713,7 @@ function RebalanceView({
                 <span>Source</span>
                 <span>Target</span>
                 <span>Replicas</span>
+                <span>Size</span>
                 <span>Risk</span>
               </div>
               {plan.movements.map((movement) => (
@@ -720,6 +727,7 @@ function RebalanceView({
                   <span className="mono">
                     [{movement.currentReplicas.join(",")}] {"->"} [{movement.proposedReplicas.join(",")}]
                   </span>
+                  <span>{formatBytes(movement.estimatedSizeBytes)}</span>
                   <StatusPill tone={movement.leaderMove ? "warning" : "good"} icon={CircleDot}>
                     {movement.leaderMove ? "leader move" : "follower move"}
                   </StatusPill>
@@ -1313,6 +1321,7 @@ function brokerPressureFromOverview(overview: Overview): RebalancePlan["brokerPr
       port: broker.port,
       replicaCount: 0,
       leaderCount: 0,
+      logBytes: collector?.lastSnapshot?.partitions?.reduce((total, partition) => total + partition.sizeBytes, 0),
       disk: collector?.lastSnapshot?.disk
     };
   });

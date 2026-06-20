@@ -20,6 +20,7 @@ export type CollectorState = {
     controllerId?: number;
     kafkaClusterId?: string;
     disk?: DiskTelemetry;
+    partitions?: PartitionLogSize[];
   };
 };
 
@@ -31,6 +32,13 @@ export type DiskTelemetry = {
   usedPercent: number;
   pressure: "normal" | "watch" | "high" | "critical";
   sampledAt: string;
+};
+
+export type PartitionLogSize = {
+  topic: string;
+  partition: number;
+  sizeBytes: number;
+  logDir: string;
 };
 
 export type Overview = {
@@ -130,6 +138,7 @@ export type RebalancePlan = {
     port?: number;
     replicaCount: number;
     leaderCount: number;
+    logBytes?: number;
     disk?: DiskTelemetry;
   }>;
   summary: {

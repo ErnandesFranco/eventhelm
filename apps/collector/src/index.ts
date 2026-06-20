@@ -1,5 +1,6 @@
 import os from "node:os";
-import { statfs } from "node:fs/promises";
+import path from "node:path";
+import { readdir, stat, statfs } from "node:fs/promises";
 import { Kafka, logLevel } from "kafkajs";
 
 const version = "0.1.0";
@@ -73,13 +74,18 @@ async function sendSnapshot() {
   await admin.connect();
   try {
     const [cluster, topics] = await Promise.all([admin.describeCluster(), admin.listTopics()]);
+    const [disk, partitions] = brokerDataPath
+      ? await Promise.all([readDiskTelemetry(brokerDataPath), readPartitionLogSizes(brokerDataPath)])
+      : [undefined, []];
+
     await postJson("/api/collectors/snapshot", {
       ...basePayload(),
       brokerCount: cluster.brokers.length,
       topicCount: topics.filter((topic) => !topic.startsWith("__")).length,
       controllerId: cluster.controller,
       kafkaClusterId: cluster.clusterId,
-      disk: brokerDataPath ? await readDiskTelemetry(brokerDataPath) : undefined,
+      disk,
+      partitions,
       brokers: cluster.brokers.map((broker) => ({
         nodeId: broker.nodeId,
         host: broker.host,
@@ -89,6 +95,59 @@ async function sendSnapshot() {
   } finally {
     await admin.disconnect();
   }
+}
+
+async function readPartitionLogSizes(root: string) {
+  const entries = await readdir(root, { withFileTypes: true });
+  const sizes = await Promise.all(
+    entries
+      .filter((entry) => entry.isDirectory())
+      .map(async (entry) => {
+        const partition = parsePartitionDirectory(entry.name);
+        if (!partition) {
+          return undefined;
+        }
+
+        const logDir = path.join(root, entry.name);
+        try {
+          return {
+            ...partition,
+            sizeBytes: await directorySize(logDir),
+            logDir
+          };
+        } catch (error) {
+          console.warn(`[collector:${collectorId}] could not size ${logDir}: ${error instanceof Error ? error.message : String(error)}`);
+          return undefined;
+        }
+      })
+  );
+
+  return sizes.filter((size): size is NonNullable<typeof size> => Boolean(size));
+}
+
+function parsePartitionDirectory(name: string) {
+  const match = /^(.*)-(\d+)$/.exec(name);
+  if (!match) {
+    return undefined;
+  }
+  return {
+    topic: match[1],
+    partition: Number(match[2])
+  };
+}
+
+async function directorySize(directory: string): Promise<number> {
+  const entries = await readdir(directory, { withFileTypes: true });
+  let total = 0;
+  for (const entry of entries) {
+    const fullPath = path.join(directory, entry.name);
+    if (entry.isDirectory()) {
+      total += await directorySize(fullPath);
+    } else if (entry.isFile()) {
+      total += (await stat(fullPath)).size;
+    }
+  }
+  return total;
 }
 
 async function readDiskTelemetry(path: string) {

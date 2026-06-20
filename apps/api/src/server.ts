@@ -311,6 +311,16 @@ app.post("/api/collectors/snapshot", async (request) => {
           sampledAt: z.string().min(1)
         })
         .optional(),
+      partitions: z
+        .array(
+          z.object({
+            topic: z.string().min(1),
+            partition: z.number().int().nonnegative(),
+            sizeBytes: z.number().nonnegative(),
+            logDir: z.string().min(1)
+          })
+        )
+        .default([]),
       brokers: z.array(
         z.object({
           nodeId: z.number(),

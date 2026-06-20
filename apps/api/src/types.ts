@@ -43,12 +43,20 @@ export type DiskTelemetry = {
   sampledAt: string;
 };
 
+export type PartitionLogSize = {
+  topic: string;
+  partition: number;
+  sizeBytes: number;
+  logDir: string;
+};
+
 export type CollectorSnapshot = CollectorHeartbeat & {
   brokerCount: number;
   topicCount: number;
   controllerId?: number;
   kafkaClusterId?: string;
   disk?: DiskTelemetry;
+  partitions?: PartitionLogSize[];
   brokers: Array<{
     nodeId: number;
     host: string;
@@ -102,6 +110,7 @@ export type RebalancePlan = {
     port?: number;
     replicaCount: number;
     leaderCount: number;
+    logBytes?: number;
     disk?: DiskTelemetry;
   }>;
   summary: {
