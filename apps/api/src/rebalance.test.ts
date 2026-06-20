@@ -73,8 +73,73 @@ test("buildDiskRebalancePlan warns when partition byte telemetry is missing", ()
 
   assert.equal(plan.movements.length, 1);
   assert.equal(plan.movements[0]?.estimatedSizeBytes, undefined);
+  assert.equal(plan.executable, false);
+  assert.ok(plan.executionBlockedReason?.includes("broker-local byte estimate"));
   assert.equal(plan.summary.estimatedBytesMoved, undefined);
   assert.ok(plan.warnings.some((warning) => warning.includes("Partition byte telemetry is missing")));
+});
+
+test("buildDiskRebalancePlan refuses target brokers without disk telemetry", () => {
+  const plan = buildDiskRebalancePlan({
+    clusterId: "local",
+    brokers,
+    collectors: [
+      collector(1, 90, [
+        ["orders.created", 0, 50_000],
+        ["orders.created", 1, 100_000],
+        ["orders.created", 2, 200_000]
+      ]),
+      collector(2, 42),
+      collector(3, 40),
+      collector(4, 10, [], { disk: false })
+    ],
+    placements,
+    input: {
+      maxMovements: 1,
+      includeInternal: false,
+      sourceBrokerId: 1,
+      targetBrokerIds: [4],
+      highWatermarkPercent: 95,
+      minBrokerGapPercent: 5,
+      executionEnabled: true
+    }
+  });
+
+  assert.equal(plan.movements.length, 0);
+  assert.equal(plan.executable, false);
+  assert.ok(plan.warnings.some((warning) => warning.includes("Requested target broker 4 does not have fresh disk telemetry")));
+});
+
+test("buildDiskRebalancePlan refuses stale requested source telemetry", () => {
+  const now = new Date("2026-06-20T12:10:00.000Z");
+  const staleSample = "2026-06-20T12:00:00.000Z";
+  const plan = buildDiskRebalancePlan({
+    clusterId: "local",
+    brokers,
+    collectors: [
+      collector(1, 90, [["orders.created", 0, 50_000]], { sampledAt: staleSample }),
+      collector(2, 42, [], { sampledAt: now.toISOString() }),
+      collector(3, 40, [], { sampledAt: now.toISOString() }),
+      collector(4, 10, [], { sampledAt: now.toISOString() })
+    ],
+    placements,
+    input: {
+      maxMovements: 1,
+      includeInternal: false,
+      sourceBrokerId: 1,
+      targetBrokerIds: [4],
+      highWatermarkPercent: 95,
+      minBrokerGapPercent: 5,
+      executionEnabled: true
+    },
+    now,
+    collectorMaxAgeMs: 5 * 60 * 1000
+  });
+
+  assert.equal(plan.movements.length, 0);
+  assert.equal(plan.executable, false);
+  assert.ok(plan.warnings.some((warning) => warning.includes("Disk telemetry is stale or invalid for broker 1")));
+  assert.ok(plan.warnings.some((warning) => warning.includes("Requested source broker 1 does not have fresh disk telemetry")));
 });
 
 test("buildRebalancePreflight passes an approved current plan with fresh collector telemetry", () => {
@@ -351,9 +416,10 @@ function placement(topic: string, partition: number, leader: number, replicas: n
 function collector(
   brokerId: number,
   usedPercent: number,
-  partitions: Array<[topic: string, partition: number, sizeBytes: number]> = []
+  partitions: Array<[topic: string, partition: number, sizeBytes: number]> = [],
+  options: { disk?: boolean; sampledAt?: string } = {}
 ): CollectorState {
-  const observedAt = new Date().toISOString();
+  const observedAt = options.sampledAt ?? new Date().toISOString();
   return {
     heartbeat: {
       collectorId: `local-broker-${brokerId}`,
@@ -374,7 +440,7 @@ function collector(
       observedAt,
       brokerCount: brokers.length,
       topicCount: 1,
-      disk: disk(usedPercent),
+      disk: options.disk === false ? undefined : disk(usedPercent, observedAt),
       partitions: partitions.map(([topic, partition, sizeBytes]) => ({
         topic,
         partition,
@@ -386,7 +452,7 @@ function collector(
   };
 }
 
-function disk(usedPercent: number): DiskTelemetry {
+function disk(usedPercent: number, sampledAt = new Date().toISOString()): DiskTelemetry {
   const totalBytes = 1_000_000;
   const usedBytes = Math.round(totalBytes * (usedPercent / 100));
   return {
@@ -396,6 +462,6 @@ function disk(usedPercent: number): DiskTelemetry {
     freeBytes: totalBytes - usedBytes,
     usedPercent,
     pressure: usedPercent >= 85 ? "high" : "normal",
-    sampledAt: new Date().toISOString()
+    sampledAt
   };
 }

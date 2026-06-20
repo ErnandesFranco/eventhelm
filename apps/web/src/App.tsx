@@ -1084,23 +1084,31 @@ function RebalanceView({
                 <span>Size</span>
                 <span>Risk</span>
               </div>
-              {plan.movements.map((movement) => (
-                <div className="tableRow" key={`${movement.topic}-${movement.partition}`}>
-                  <span>
-                    <strong className="mono">{movement.topic}</strong>
-                    <small>partition {movement.partition}</small>
-                  </span>
-                  <span>Broker {movement.sourceBrokerId}</span>
-                  <span>Broker {movement.targetBrokerId}</span>
-                  <span className="mono">
-                    [{movement.currentReplicas.join(",")}] {"->"} [{movement.proposedReplicas.join(",")}]
-                  </span>
-                  <span>{formatBytes(movement.estimatedSizeBytes)}</span>
-                  <StatusPill tone={movement.leaderMove ? "warning" : "good"} icon={CircleDot}>
-                    {movement.leaderMove ? "leader move" : "follower move"}
-                  </StatusPill>
-                </div>
-              ))}
+              {plan.movements.map((movement) => {
+                const risk =
+                  movement.estimatedSizeBytes === undefined
+                    ? { tone: "bad" as const, label: "missing size" }
+                    : movement.leaderMove
+                      ? { tone: "warning" as const, label: "leader move" }
+                      : { tone: "good" as const, label: "follower move" };
+                return (
+                  <div className="tableRow" key={`${movement.topic}-${movement.partition}`}>
+                    <span>
+                      <strong className="mono">{movement.topic}</strong>
+                      <small>partition {movement.partition}</small>
+                    </span>
+                    <span>Broker {movement.sourceBrokerId}</span>
+                    <span>Broker {movement.targetBrokerId}</span>
+                    <span className="mono">
+                      [{movement.currentReplicas.join(",")}] {"->"} [{movement.proposedReplicas.join(",")}]
+                    </span>
+                    <span>{formatBytes(movement.estimatedSizeBytes)}</span>
+                    <StatusPill tone={risk.tone} icon={CircleDot}>
+                      {risk.label}
+                    </StatusPill>
+                  </div>
+                );
+              })}
             </DataTable>
             {plan.movements.length === 0 ? <EmptyState title="No partition movements generated" /> : null}
           </section>

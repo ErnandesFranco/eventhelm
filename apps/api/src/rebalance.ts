@@ -35,23 +35,70 @@ export function buildDiskRebalancePlan({
   brokers,
   collectors,
   placements,
-  input
+  input,
+  now = new Date(),
+  collectorMaxAgeMs = REBALANCE_COLLECTOR_MAX_AGE_MS
 }: {
   clusterId: string;
   brokers: Broker[];
   collectors: CollectorState[];
   placements: PartitionPlacement[];
   input: RebalancePlanInput;
+  now?: Date;
+  collectorMaxAgeMs?: number;
 }): RebalancePlan {
   const warnings = new Set<string>();
   const pressure = buildBrokerPressure(brokers, collectors, placements);
   const brokersWithDisk = pressure.filter((broker) => broker.disk);
+  const liveBrokerIds = new Set(brokers.map((broker) => broker.nodeId));
+  const staleDiskBrokerIds = brokersWithDisk
+    .filter((broker) => !hasFreshDiskTelemetry(broker, now, collectorMaxAgeMs))
+    .map((broker) => broker.brokerId)
+    .sort((left, right) => left - right);
+  const freshDiskBrokerIds = new Set(
+    brokersWithDisk
+      .filter((broker) => hasFreshDiskTelemetry(broker, now, collectorMaxAgeMs))
+      .map((broker) => broker.brokerId)
+  );
   const partitionSizes = buildPartitionSizeIndex(collectors);
   const eligiblePlacements = placements.filter((placement) => input.includeInternal || !placement.isInternal);
   const sizedPlacements = eligiblePlacements.filter((placement) => partitionSizes.has(partitionKey(placement.topic, placement.partition)));
+  const requestedTargetIds = input.targetBrokerIds ?? [];
 
   if (brokersWithDisk.length < brokers.length) {
     warnings.add("Disk telemetry is missing for at least one broker. Run a collector with BROKER_DATA_PATH on every broker host.");
+  }
+
+  if (staleDiskBrokerIds.length > 0) {
+    warnings.add(
+      `Disk telemetry is stale or invalid for broker${staleDiskBrokerIds.length === 1 ? "" : "s"} ${staleDiskBrokerIds.join(", ")}.`
+    );
+  }
+
+  if (input.sourceBrokerId !== undefined && !liveBrokerIds.has(input.sourceBrokerId)) {
+    warnings.add(`Requested source broker ${input.sourceBrokerId} is not present in live Kafka metadata.`);
+  }
+
+  if (input.sourceBrokerId !== undefined && liveBrokerIds.has(input.sourceBrokerId) && !freshDiskBrokerIds.has(input.sourceBrokerId)) {
+    warnings.add(`Requested source broker ${input.sourceBrokerId} does not have fresh disk telemetry.`);
+  }
+
+  const missingTargetIds = requestedTargetIds.filter((brokerId) => !liveBrokerIds.has(brokerId));
+  if (missingTargetIds.length > 0) {
+    warnings.add(
+      `Requested target broker${missingTargetIds.length === 1 ? "" : "s"} ${missingTargetIds.join(", ")} ${
+        missingTargetIds.length === 1 ? "is" : "are"
+      } not present in live Kafka metadata.`
+    );
+  }
+
+  const targetIdsWithoutFreshDisk = requestedTargetIds.filter((brokerId) => liveBrokerIds.has(brokerId) && !freshDiskBrokerIds.has(brokerId));
+  if (targetIdsWithoutFreshDisk.length > 0) {
+    warnings.add(
+      `Requested target broker${targetIdsWithoutFreshDisk.length === 1 ? "" : "s"} ${targetIdsWithoutFreshDisk.join(", ")} ${
+        targetIdsWithoutFreshDisk.length === 1 ? "does" : "do"
+      } not have fresh disk telemetry.`
+    );
   }
 
   if (sizedPlacements.length === 0) {
@@ -72,7 +119,7 @@ export function buildDiskRebalancePlan({
       .map((broker) => [broker.brokerId, broker.disk?.usedBytes ?? 0])
   );
   const movements: RebalanceMovement[] = [];
-  const sourceBrokerIds = chooseSources(pressure, input);
+  const sourceBrokerIds = chooseSources(pressure, input, freshDiskBrokerIds);
 
   if (sourceBrokerIds.length === 0) {
     warnings.add("No broker is above the disk high-water mark or imbalance threshold.");
@@ -104,7 +151,8 @@ export function buildDiskRebalancePlan({
         projectedReplicaCount,
         projectedUsedBytes,
         highWatermarkPercent: input.highWatermarkPercent,
-        allowedTargets: input.targetBrokerIds
+        allowedTargets: input.targetBrokerIds,
+        freshDiskBrokerIds
       });
 
       if (!targetBroker) {
@@ -156,18 +204,23 @@ export function buildDiskRebalancePlan({
     warnings.add("Some planned movements do not have byte estimates because their source collector did not report log-dir size.");
   }
 
-  const executionBlockedReason = input.executionEnabled
-    ? movements.length === 0
-      ? "No partition movements were generated."
+  const executionBlockers = [
+    input.executionEnabled
+      ? undefined
+      : "Rebalance execution is locked. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true after approvals and RBAC are configured.",
+    movements.length === 0 ? "No partition movements were generated." : undefined,
+    movements.length > 0 && knownMovementSizes.length < movements.length
+      ? "Every movement must have a broker-local byte estimate before execution."
       : undefined
-    : "Rebalance execution is locked. Set EVENTHELM_ENABLE_REBALANCE_EXECUTION=true after approvals and RBAC are configured.";
+  ].filter((reason): reason is string => Boolean(reason));
+  const executionBlockedReason = executionBlockers.length > 0 ? executionBlockers.join(" ") : undefined;
 
   return {
     id: nanoid(),
     clusterId,
     generatedAt: new Date().toISOString(),
     strategy: "disk-pressure",
-    executable: input.executionEnabled && movements.length > 0,
+    executable: executionBlockers.length === 0,
     executionBlockedReason,
     brokerPressure: pressure,
     summary: {
@@ -472,12 +525,12 @@ function buildBrokerPressure(brokers: Broker[], collectors: CollectorState[], pl
     .sort((left, right) => left.brokerId - right.brokerId);
 }
 
-function chooseSources(pressure: BrokerPressure[], input: RebalancePlanInput): number[] {
+function chooseSources(pressure: BrokerPressure[], input: RebalancePlanInput, freshDiskBrokerIds: Set<number>): number[] {
   if (input.sourceBrokerId !== undefined) {
-    return [input.sourceBrokerId];
+    return freshDiskBrokerIds.has(input.sourceBrokerId) ? [input.sourceBrokerId] : [];
   }
 
-  const withDisk = pressure.filter((broker) => broker.disk);
+  const withDisk = pressure.filter((broker) => freshDiskBrokerIds.has(broker.brokerId));
   const overloaded = withDisk
     .filter((broker) => (broker.disk?.usedPercent ?? 0) >= input.highWatermarkPercent)
     .sort((left, right) => (right.disk?.usedPercent ?? 0) - (left.disk?.usedPercent ?? 0));
@@ -505,7 +558,8 @@ function chooseTarget({
   projectedReplicaCount,
   projectedUsedBytes,
   highWatermarkPercent,
-  allowedTargets
+  allowedTargets,
+  freshDiskBrokerIds
 }: {
   sourceBrokerId: number;
   currentReplicas: number[];
@@ -515,9 +569,11 @@ function chooseTarget({
   projectedUsedBytes: Map<number, number>;
   highWatermarkPercent: number;
   allowedTargets?: number[];
+  freshDiskBrokerIds: Set<number>;
 }): BrokerPressure | undefined {
   return pressure
     .filter((broker) => broker.brokerId !== sourceBrokerId)
+    .filter((broker) => freshDiskBrokerIds.has(broker.brokerId))
     .filter((broker) => !currentReplicas.includes(broker.brokerId))
     .filter((broker) => !allowedTargets || allowedTargets.includes(broker.brokerId))
     .filter((broker) => {
@@ -551,6 +607,14 @@ function projectedTargetUsedPercent(
     return undefined;
   }
   return ((projectedUsedBytes.get(broker.brokerId) ?? broker.disk.usedBytes) + estimatedSizeBytes) / broker.disk.totalBytes * 100;
+}
+
+function hasFreshDiskTelemetry(broker: BrokerPressure, now: Date, collectorMaxAgeMs: number) {
+  if (!broker.disk || broker.disk.totalBytes <= 0) {
+    return false;
+  }
+  const sampledAtMs = Date.parse(broker.disk.sampledAt);
+  return Number.isFinite(sampledAtMs) && now.getTime() - sampledAtMs <= collectorMaxAgeMs;
 }
 
 function rebalanceReason(sourceBrokerId: number, targetBrokerId: number, pressure: BrokerPressure[], estimatedSizeBytes?: number) {

@@ -95,15 +95,16 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 1. Broker-local collectors report disk capacity, free space, used space, and pressure bands from the mounted broker log directory.
 2. Collectors scan partition log directories and report per-partition byte sizes.
 3. The API reads Kafka partition placement metadata and generates a reassignment plan that moves replicas away from disk-pressured brokers.
-4. The planner scores target brokers by projected disk usage and estimates bytes moved from collector log-dir telemetry.
-5. The API persists the generated plan and returns a plan ID.
-6. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
-7. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
-8. The console and API expose Kafka's active partition reassignment status.
-9. Operators can run a preflight against a stored plan. The preflight checks the execution switch, approval state, executable plan shape, movement byte-estimate coverage, active Kafka reassignments, reviewed placement drift, under-replicated or offline planned partitions, live broker membership, collector disk coverage, collector freshness, and planner warnings.
-10. Execution accepts only approved stored plan IDs, requires distinct planner, reviewer, and executor actors in token mode, claims a single in-flight `executing` plan per cluster, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
-11. EventHelm marks an executing plan `executed` only after Kafka reports no active reassignment and live replica placement matches the proposed assignments.
-12. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
+4. The planner only selects source and target brokers with fresh broker-local disk telemetry.
+5. The planner scores target brokers by projected disk usage and estimates bytes moved from collector log-dir telemetry.
+6. The API persists the generated plan and returns a plan ID.
+7. The console shows broker pressure, planned replica movements, warnings, and the Kafka reassignment JSON.
+8. Operators can review retained plan history, reload a stored plan by ID, and approve or reject the plan.
+9. The console and API expose Kafka's active partition reassignment status.
+10. Operators can run a preflight against a stored plan. The preflight checks the execution switch, approval state, executable plan shape, movement byte-estimate coverage, active Kafka reassignments, reviewed placement drift, under-replicated or offline planned partitions, live broker membership, collector disk coverage, collector freshness, and planner warnings.
+11. Execution accepts only approved stored plan IDs, requires distinct planner, reviewer, and executor actors in token mode, claims a single in-flight `executing` plan per cluster, reruns the same preflight gate, and refuses to call Kafka when any critical check fails.
+12. EventHelm marks an executing plan `executed` only after Kafka reports no active reassignment and live replica placement matches the proposed assignments.
+13. Execution stays locked by default until production auth, RBAC, and deployment-specific safeguards are configured.
 
 ### Consumer Offset Reset
 
