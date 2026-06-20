@@ -11,7 +11,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 - One broker-local collector per broker in the Docker lab.
 - Disk-aware partition rebalance planning from broker collector telemetry.
 - Rules-based advisor agents for UX, security, SRE, governance, and maintainership.
-- A three-broker Kafka lab in Docker Compose.
+- A ten-broker Kafka lab in Docker Compose.
 
 ## Quick Start
 
@@ -30,6 +30,13 @@ The Docker lab exposes Kafka brokers only on localhost:
 - `localhost:19092`
 - `localhost:29092`
 - `localhost:39092`
+- `localhost:49092`
+- `localhost:59092`
+- `localhost:60092`
+- `localhost:61092`
+- `localhost:62092`
+- `localhost:63092`
+- `localhost:64092`
 
 ## Advisor Agents
 
