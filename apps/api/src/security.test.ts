@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import type { FastifyRequest } from "fastify";
-import { actorFromRequest, assertReadAllowed, assertWriteAllowed } from "./security.js";
+import { actorFromRequest, assertCollectorAllowed, assertReadAllowed, assertWriteAllowed } from "./security.js";
 
 const managedEnvKeys = [
   "EVENTHELM_AUTH_MODE",
   "EVENTHELM_API_TOKEN",
   "EVENTHELM_API_TOKENS_JSON",
+  "EVENTHELM_COLLECTOR_TOKEN",
   "EVENTHELM_REQUIRE_READ_AUTH",
   "EVENTHELM_REQUIRE_WRITE_CONFIRMATION",
   "EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE"
@@ -133,6 +134,44 @@ test("write rate limit follows token when actor headers change", () => {
       assert.doesNotThrow(() => assertWriteAllowed(requestWithToken("limited-spoof-token", false, "second-header"), "topic:write"));
       const error = captureError(() => assertWriteAllowed(requestWithToken("limited-spoof-token", false, "third-header"), "topic:write"));
       assert.equal(error.statusCode, 429);
+    }
+  );
+});
+
+test("collector token is required in token auth mode", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token"
+    },
+    () => {
+      const error = captureError(() => assertCollectorAllowed({ headers: {} } as unknown as FastifyRequest));
+      assert.equal(error.statusCode, 401);
+    }
+  );
+});
+
+test("collector token authorizes collector requests", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token",
+      EVENTHELM_COLLECTOR_TOKEN: "collector-secret"
+    },
+    () => {
+      assert.doesNotThrow(() =>
+        assertCollectorAllowed({
+          headers: {
+            "x-eventhelm-collector-token": "collector-secret"
+          }
+        } as unknown as FastifyRequest)
+      );
+      const error = captureError(() =>
+        assertCollectorAllowed({
+          headers: {
+            "x-eventhelm-collector-token": "wrong"
+          }
+        } as unknown as FastifyRequest)
+      );
+      assert.equal(error.statusCode, 401);
     }
   );
 });

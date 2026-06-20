@@ -130,8 +130,12 @@ function rateLimitPrincipal(request: FastifyRequest) {
 }
 
 export function assertCollectorAllowed(request: FastifyRequest) {
+  const security = getSecurityStatus();
   const token = getCollectorToken();
   if (!token) {
+    if (security.authMode === "token") {
+      throw unauthorized("EVENTHELM_COLLECTOR_TOKEN is required when EVENTHELM_AUTH_MODE=token.");
+    }
     return;
   }
 

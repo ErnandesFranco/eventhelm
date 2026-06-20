@@ -141,6 +141,7 @@ Current protections:
 
 - Host-published Docker ports bind to `127.0.0.1`.
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
+- In token auth mode, `EVENTHELM_COLLECTOR_TOKEN` is required for collector heartbeat and snapshot writes.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `cluster:breakglass`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
 - In token mode, audit actors and write-rate principals are derived from the authenticated token instead of caller-supplied actor headers.

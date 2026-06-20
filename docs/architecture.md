@@ -48,7 +48,7 @@ The console is an operator workbench. The first screen should answer:
 
 Collectors run near brokers. In Docker Compose this is modeled as one collector container per broker. In Kubernetes this maps to sidecars or DaemonSets. For bare metal or VM-based Kafka clusters, the same agent can run as a systemd service on each broker host.
 
-The collector is push-based so broker networks do not have to expose collector ports back to the control plane.
+The collector is push-based so broker networks do not have to expose collector ports back to the control plane. In token auth mode, `EVENTHELM_COLLECTOR_TOKEN` is required for collector heartbeat and snapshot writes.
 
 Current collector responsibilities:
 
