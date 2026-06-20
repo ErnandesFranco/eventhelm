@@ -12,6 +12,7 @@ It is designed for platform teams that want safe self-service, cluster visibilit
 - One broker-local collector per broker in the Docker lab.
 - Disk-aware partition rebalance planning from broker collector telemetry.
 - Consumer group lag summaries and topic/partition offset drill-downs.
+- Reviewed consumer group offset resets with live Kafka bounds, stale-preview protection, and audit events.
 - Rules-based advisor agents for UX, security, SRE, governance, and maintainership.
 - A ten-broker Kafka lab in Docker Compose.
 
@@ -65,6 +66,16 @@ EventHelm calculates consumer lag with Kafka committed offsets and topic log-end
 - `GET /api/clusters/:clusterId/consumer-groups/:groupId/lag` returns topic and partition offset details for drill-downs.
 - The Operator advisor flags consumer groups with active lag or unknown committed offsets.
 
+## Offset Reset
+
+EventHelm treats consumer offset resets as a reviewed operation:
+
+- `POST /api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/preview` returns current offsets, low/high log bounds, proposed offsets, warnings, projected lag, and a review token.
+- `POST /api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/execute` requires the reviewed token and write confirmation headers.
+- Execution recomputes the preview and rejects stale tokens when live offsets, group state, or requested targets changed.
+- KafkaJS requires the consumer group to be stopped; EventHelm surfaces running groups as non-executable previews.
+- Successful resets are recorded as `consumer.offset_reset` audit events.
+
 ## Partition Rebalance
 
 EventHelm includes a disk-pressure rebalance planner:
@@ -88,6 +99,7 @@ Current protections:
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - Audit and collector state are persisted in Postgres in the Docker lab.
 - Mutating requests support explicit confirmation headers.
+- Consumer offset resets require preview tokens and reject stale live state.
 - Partition reassignment execution is locked by default with `EVENTHELM_ENABLE_REBALANCE_EXECUTION=false`.
 
 Still required before shared or production use:

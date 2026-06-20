@@ -20,6 +20,7 @@ The API owns:
 - Kafka AdminClient operations.
 - Message browsing and producing.
 - Consumer group lag calculation from committed offsets and log-end offsets.
+- Consumer group offset-reset previews and reviewed execution.
 - Collector registration and snapshots.
 - Advisor-agent checks.
 - Security posture reporting.
@@ -79,6 +80,18 @@ EventHelm treats rebalancing as a plan-review-apply workflow:
 7. Execution accepts the stored plan ID, reloads the reviewed plan, and rejects stale plans when current replica placement has drifted.
 8. Execution stays locked by default until production auth, approvals, and RBAC are configured.
 
+### Consumer Offset Reset
+
+EventHelm treats offset reset as preview-review-execute:
+
+1. The console requests a preview for a group, topic, mode, and optional partition set.
+2. The API reads committed group offsets and topic low/high offsets from Kafka.
+3. The API calculates proposed offsets, projected lag, skipped/replayed record counts, warnings, and a review token.
+4. Running consumer groups and out-of-range absolute offsets produce non-executable previews.
+5. Execution requires write confirmation headers and the review token.
+6. The API recomputes the preview from live Kafka state and rejects stale tokens before calling KafkaJS `setOffsets`.
+7. Successful resets are recorded in the audit ledger with the token and summary counts.
+
 ## Deployment Shape
 
 ```mermaid
@@ -108,7 +121,7 @@ flowchart LR
 1. Persist configured clusters, agent runs, findings, and executed rebalance history in Postgres.
 2. Add OIDC/JWT, RBAC, API tokens, and collector enrollment.
 3. Add Schema Registry and Kafka Connect clients.
-4. Add offset reset operations with dry-run/approval workflows.
+4. Add approval queues for offset resets, topic mutations, and rebalance execution.
 5. Add reassignment throttling, cancellation, and JMX validation.
 6. Add GitOps import/export for topics and connector configs.
 7. Add policy-as-code for topic naming, retention, partitions, replication, and payload controls.

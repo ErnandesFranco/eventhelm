@@ -42,6 +42,8 @@ import type {
   CollectorState,
   ConsumerGroup,
   ConsumerGroupLag,
+  ConsumerOffsetResetMode,
+  ConsumerOffsetResetPreview,
   MessageRecord,
   Overview,
   RebalancePlan,
@@ -255,7 +257,9 @@ export function App() {
             setFromBeginning={setFromBeginning}
           />
         ) : null}
-        {!loading && activeTab === "consumers" ? <ConsumersView clusterId={selectedClusterId} groups={groups} /> : null}
+        {!loading && activeTab === "consumers" ? (
+          <ConsumersView clusterId={selectedClusterId} groups={groups} onChanged={() => void load()} />
+        ) : null}
         {!loading && activeTab === "collectors" ? <CollectorsView collectors={collectors} brokerCount={overview?.brokerCount ?? 0} /> : null}
         {!loading && activeTab === "audit" ? <AuditView audit={audit} /> : null}
       </main>
@@ -1148,11 +1152,18 @@ function MessagesView({
   );
 }
 
-function ConsumersView({ clusterId, groups }: { clusterId: string; groups: ConsumerGroup[] }) {
+function ConsumersView({ clusterId, groups, onChanged }: { clusterId: string; groups: ConsumerGroup[]; onChanged: () => void }) {
   const [query, setQuery] = useState("");
   const [selectedLag, setSelectedLag] = useState<ConsumerGroupLag | null>(null);
   const [busyGroup, setBusyGroup] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [resetTopic, setResetTopic] = useState("");
+  const [resetMode, setResetMode] = useState<ConsumerOffsetResetMode>("latest");
+  const [resetOffset, setResetOffset] = useState("");
+  const [resetPartitions, setResetPartitions] = useState("");
+  const [resetPreview, setResetPreview] = useState<ConsumerOffsetResetPreview | null>(null);
+  const [resetBusy, setResetBusy] = useState(false);
+  const [resetNotice, setResetNotice] = useState<string | null>(null);
   const filtered = groups.filter((group) => group.groupId.toLowerCase().includes(query.toLowerCase()));
   const totalLag = groups.reduce((total, group) => total + (group.lag?.total ?? 0), 0);
   const laggingGroups = groups.filter((group) => (group.lag?.total ?? 0) > 0).length;
@@ -1161,11 +1172,62 @@ function ConsumersView({ clusterId, groups }: { clusterId: string; groups: Consu
     setBusyGroup(groupId);
     setError(null);
     try {
-      setSelectedLag(await api.consumerGroupLag(clusterId, groupId));
+      const lag = await api.consumerGroupLag(clusterId, groupId);
+      setSelectedLag(lag);
+      setResetTopic(lag.topics[0]?.topic ?? "");
+      setResetPreview(null);
+      setResetNotice(null);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : String(caught));
     } finally {
       setBusyGroup(null);
+    }
+  }
+
+  async function previewOffsetReset(event: FormEvent) {
+    event.preventDefault();
+    if (!selectedLag || !resetTopic) {
+      return;
+    }
+    setResetBusy(true);
+    setError(null);
+    setResetNotice(null);
+    try {
+      setResetPreview(
+        await api.previewOffsetReset(clusterId, selectedLag.groupId, {
+          topic: resetTopic,
+          mode: resetMode,
+          partitions: parseResetPartitions(resetPartitions),
+          offset: resetMode === "absolute" ? resetOffset : undefined
+        })
+      );
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setResetBusy(false);
+    }
+  }
+
+  async function executeOffsetReset() {
+    if (!resetPreview) {
+      return;
+    }
+    setResetBusy(true);
+    setError(null);
+    setResetNotice(null);
+    try {
+      const result = await api.executeOffsetReset(clusterId, resetPreview.groupId, {
+        ...resetPreview.request,
+        reviewToken: resetPreview.reviewToken
+      });
+      setResetPreview(null);
+      await inspectLag(resetPreview.groupId);
+      setResetNotice(`Offset reset accepted for ${result.summary.partitions} partitions.`);
+      onChanged();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : String(caught));
+    } finally {
+      setResetBusy(false);
     }
   }
 
@@ -1194,6 +1256,7 @@ function ConsumersView({ clusterId, groups }: { clusterId: string; groups: Consu
         <SearchField value={query} onChange={setQuery} placeholder="Search groups" />
       </div>
       {error ? <div className="notice error">{error}</div> : null}
+      {resetNotice ? <div className="notice success">{resetNotice}</div> : null}
 
       <section className="surface">
         <DataTable className="consumerTable">
@@ -1233,39 +1296,217 @@ function ConsumersView({ clusterId, groups }: { clusterId: string; groups: Consu
       </section>
 
       {selectedLag ? (
-        <section className="surface">
-          <SurfaceHeader
-            icon={Gauge}
-            title={selectedLag.groupId}
-            meta={`${selectedLag.totalLag.toLocaleString()} records behind`}
-          />
-          <DataTable className="lagTable">
-            <div className="tableRow tableHead">
-              <span>Topic</span>
-              <span>Partition</span>
-              <span>Committed</span>
-              <span>Log end</span>
-              <span>Lag</span>
-            </div>
-            {selectedLag.topics.flatMap((topic) =>
-              topic.partitions.map((partition) => (
-                <div className="tableRow" key={`${topic.topic}-${partition.partition}`}>
-                  <span className="mono strongText">{topic.topic}</span>
-                  <span>{partition.partition}</span>
-                  <span className="mono">{partition.currentOffset ?? "unknown"}</span>
-                  <span className="mono">{partition.logEndOffset}</span>
-                  <StatusPill tone={lagTone(partition.lag ?? 0)} icon={Gauge}>
-                    {partition.lag === undefined ? "unknown" : partition.lag.toLocaleString()}
-                  </StatusPill>
+        <div className="consumerDetailGrid">
+          <section className="surface">
+            <SurfaceHeader
+              icon={Gauge}
+              title={selectedLag.groupId}
+              meta={`${selectedLag.totalLag.toLocaleString()} records behind`}
+            />
+            <DataTable className="lagTable">
+              <div className="tableRow tableHead">
+                <span>Topic</span>
+                <span>Partition</span>
+                <span>Committed</span>
+                <span>Log end</span>
+                <span>Lag</span>
+              </div>
+              {selectedLag.topics.flatMap((topic) =>
+                topic.partitions.map((partition) => (
+                  <div className="tableRow" key={`${topic.topic}-${partition.partition}`}>
+                    <span className="mono strongText">{topic.topic}</span>
+                    <span>{partition.partition}</span>
+                    <span className="mono">{partition.currentOffset ?? "unknown"}</span>
+                    <span className="mono">{partition.logEndOffset}</span>
+                    <StatusPill tone={lagTone(partition.lag ?? 0)} icon={Gauge}>
+                      {partition.lag === undefined ? "unknown" : partition.lag.toLocaleString()}
+                    </StatusPill>
+                  </div>
+                ))
+              )}
+            </DataTable>
+            {selectedLag.topics.length === 0 ? <EmptyState title="No committed offsets for this group" /> : null}
+          </section>
+
+          <section className="surface offsetResetSurface">
+            <SurfaceHeader icon={ArrowRightLeft} title="Offset Reset" meta="review required" />
+            <form className="offsetResetControls" onSubmit={(event) => void previewOffsetReset(event)}>
+              <label>
+                Topic
+                <select
+                  value={resetTopic}
+                  onChange={(event) => {
+                    setResetTopic(event.target.value);
+                    setResetPreview(null);
+                  }}
+                >
+                  {selectedLag.topics.map((topic) => (
+                    <option value={topic.topic} key={topic.topic}>
+                      {topic.topic}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Mode
+                <select
+                  value={resetMode}
+                  onChange={(event) => {
+                    setResetMode(event.target.value as ConsumerOffsetResetMode);
+                    setResetPreview(null);
+                  }}
+                >
+                  <option value="latest">Latest</option>
+                  <option value="earliest">Earliest</option>
+                  <option value="absolute">Absolute</option>
+                </select>
+              </label>
+              <label>
+                Offset
+                <input
+                  disabled={resetMode !== "absolute"}
+                  inputMode="numeric"
+                  min="0"
+                  value={resetOffset}
+                  onChange={(event) => {
+                    setResetOffset(event.target.value);
+                    setResetPreview(null);
+                  }}
+                  placeholder="0"
+                />
+              </label>
+              <label>
+                Partitions
+                <input
+                  value={resetPartitions}
+                  onChange={(event) => {
+                    setResetPartitions(event.target.value);
+                    setResetPreview(null);
+                  }}
+                  placeholder="all"
+                />
+              </label>
+              <button className="primaryButton" type="submit" disabled={!resetTopic || resetBusy}>
+                <Search size={17} />
+                {resetBusy ? "Reviewing" : "Preview"}
+              </button>
+            </form>
+
+            {resetPreview ? (
+              <div className="offsetResetReview">
+                <div className="offsetResetSummary">
+                  <Metric icon={Gauge} label="Before" value={formatIntegerString(resetPreview.summary.lagBefore)} detail="lag" />
+                  <Metric icon={Gauge} label="After" value={formatIntegerString(resetPreview.summary.lagAfter)} detail="projected lag" />
+                  <Metric
+                    icon={ArrowRightLeft}
+                    label="Skipped"
+                    value={formatIntegerString(resetPreview.summary.messagesSkipped)}
+                    detail="records"
+                  />
+                  <Metric
+                    icon={RefreshCw}
+                    label="Replay"
+                    value={formatIntegerString(resetPreview.summary.messagesToReplay)}
+                    detail="records"
+                  />
                 </div>
-              ))
-            )}
-          </DataTable>
-          {selectedLag.topics.length === 0 ? <EmptyState title="No committed offsets for this group" /> : null}
-        </section>
+
+                {resetPreview.warnings.length > 0 ? (
+                  <div className="resetWarnings">
+                    {resetPreview.warnings.map((warning) => (
+                      <span key={warning}>
+                        <AlertTriangle size={14} />
+                        {warning}
+                      </span>
+                    ))}
+                  </div>
+                ) : null}
+
+                <DataTable className="offsetResetTable">
+                  <div className="tableRow tableHead">
+                    <span>Topic</span>
+                    <span>Partition</span>
+                    <span>Current</span>
+                    <span>Target</span>
+                    <span>Delta</span>
+                    <span>Status</span>
+                  </div>
+                  {resetPreview.topics.flatMap((topic) =>
+                    topic.partitions.map((partition) => (
+                      <div className="tableRow" key={`${topic.topic}-${partition.partition}`}>
+                        <span className="mono strongText">{topic.topic}</span>
+                        <span>{partition.partition}</span>
+                        <span className="mono">{partition.currentOffset ?? "unset"}</span>
+                        <span className="mono">{partition.proposedOffset}</span>
+                        <span className="mono">{formatSignedIntegerString(partition.delta)}</span>
+                        {partition.blockedReason ? (
+                          <StatusPill tone="bad" icon={AlertTriangle}>
+                            blocked
+                          </StatusPill>
+                        ) : (
+                          <StatusPill tone="good" icon={CheckCircle2}>
+                            ready
+                          </StatusPill>
+                        )}
+                      </div>
+                    ))
+                  )}
+                </DataTable>
+
+                <footer className="offsetResetFooter">
+                  <span className="mono">{resetPreview.reviewToken.slice(0, 12)}</span>
+                  <button
+                    className="primaryButton"
+                    type="button"
+                    disabled={!resetPreview.executable || resetBusy}
+                    onClick={() => void executeOffsetReset()}
+                  >
+                    <ArrowRightLeft size={17} />
+                    Execute reviewed reset
+                  </button>
+                </footer>
+              </div>
+            ) : null}
+          </section>
+        </div>
       ) : null}
     </div>
   );
+}
+
+function parseResetPartitions(value: string) {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    return undefined;
+  }
+
+  return trimmed.split(",").map((part) => {
+    const normalized = part.trim();
+    if (!normalized) {
+      throw new Error("Partitions must be comma-separated non-negative integers.");
+    }
+    const partition = Number(normalized);
+    if (!Number.isInteger(partition) || partition < 0) {
+      throw new Error("Partitions must be comma-separated non-negative integers.");
+    }
+    return partition;
+  });
+}
+
+function formatIntegerString(value: string) {
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) ? parsed.toLocaleString() : value;
+}
+
+function formatSignedIntegerString(value?: string) {
+  if (!value) {
+    return "n/a";
+  }
+  const parsed = Number(value);
+  if (!Number.isSafeInteger(parsed)) {
+    return value.startsWith("-") ? value : `+${value}`;
+  }
+  return parsed > 0 ? `+${parsed.toLocaleString()}` : parsed.toLocaleString();
 }
 
 function CollectorsView({ collectors, brokerCount }: { collectors: CollectorState[]; brokerCount: number }) {

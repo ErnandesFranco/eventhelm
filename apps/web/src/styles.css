@@ -400,6 +400,12 @@ label {
   color: #8d1d1d;
 }
 
+.notice.success {
+  border-color: #b8dfcf;
+  background: var(--green-soft);
+  color: #0f6b4d;
+}
+
 .notice.loading {
   border-color: #b6c9f5;
   background: #eef4ff;
@@ -1288,6 +1294,10 @@ label {
   grid-template-columns: minmax(260px, 1.6fr) 90px 150px 150px 120px;
 }
 
+.offsetResetTable .tableRow {
+  grid-template-columns: minmax(230px, 1.4fr) 90px 120px 120px 110px 120px;
+}
+
 .collectorTable .tableRow {
   grid-template-columns: minmax(230px, 1.5fr) 90px 120px 130px 120px minmax(190px, 1fr);
 }
@@ -1448,6 +1458,86 @@ label {
 
 .rebalanceWarnings span {
   display: block;
+}
+
+.consumerDetailGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.78fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.offsetResetSurface {
+  display: grid;
+  gap: 14px;
+  align-content: start;
+}
+
+.offsetResetControls {
+  display: grid;
+  grid-template-columns: minmax(190px, 1.25fr) minmax(120px, 0.72fr) minmax(110px, 0.65fr) minmax(120px, 0.8fr) auto;
+  gap: 10px;
+  align-items: end;
+  padding: 0 16px 16px;
+}
+
+.offsetResetControls button {
+  min-height: 38px;
+}
+
+.offsetResetReview {
+  display: grid;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding: 16px;
+}
+
+.offsetResetSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.offsetResetSummary .metric {
+  min-height: 104px;
+}
+
+.resetWarnings {
+  display: grid;
+  gap: 8px;
+}
+
+.resetWarnings span {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #f0d49c;
+  border-radius: var(--radius);
+  background: var(--amber-soft);
+  color: #8a5200;
+  padding: 8px 10px;
+  font-size: 0.84rem;
+  font-weight: 720;
+}
+
+.resetWarnings svg {
+  flex: none;
+}
+
+.offsetResetFooter {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+}
+
+.offsetResetFooter > span {
+  margin-right: auto;
+  color: var(--muted);
+  font-size: 0.78rem;
 }
 
 .movementTable small {
@@ -1685,6 +1775,10 @@ label {
     grid-template-columns: 1fr;
   }
 
+  .consumerDetailGrid {
+    grid-template-columns: 1fr;
+  }
+
   .rebalanceControlGrid,
   .brokerPressureGrid {
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1728,6 +1822,15 @@ label {
   .metricStrip,
   .agentBoard {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .offsetResetControls,
+  .offsetResetSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .offsetResetControls button {
+    grid-column: 1 / -1;
   }
 
   .topologyMap,
@@ -1779,6 +1882,8 @@ label {
   .agentBoard,
   .rebalanceControlGrid,
   .brokerPressureGrid,
+  .offsetResetControls,
+  .offsetResetSummary,
   .formGrid {
     grid-template-columns: 1fr;
   }
@@ -1812,9 +1917,14 @@ label {
   }
 
   .brokerPressureCard > div:first-child,
+  .offsetResetFooter,
   .reassignmentPayload footer {
     align-items: stretch;
     flex-direction: column;
+  }
+
+  .offsetResetFooter > span {
+    margin-right: 0;
   }
 
   .brokerPressureMeta {

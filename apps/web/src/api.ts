@@ -96,6 +96,49 @@ export type ConsumerGroupLag = {
   }>;
 };
 
+export type ConsumerOffsetResetMode = "earliest" | "latest" | "absolute";
+
+export type ConsumerOffsetResetRequest = {
+  topic: string;
+  partitions?: number[];
+  mode: ConsumerOffsetResetMode;
+  offset?: string;
+};
+
+export type ConsumerOffsetResetPreview = {
+  groupId: string;
+  generatedAt: string;
+  state?: string;
+  members: number;
+  protocolType: string;
+  request: ConsumerOffsetResetRequest;
+  executable: boolean;
+  reviewToken: string;
+  warnings: string[];
+  summary: {
+    partitions: number;
+    executablePartitions: number;
+    lagBefore: string;
+    lagAfter: string;
+    messagesSkipped: string;
+    messagesToReplay: string;
+  };
+  topics: Array<{
+    topic: string;
+    partitions: Array<{
+      partition: number;
+      currentOffset?: string;
+      lowOffset: string;
+      logEndOffset: string;
+      proposedOffset: string;
+      lagBefore?: string;
+      lagAfter?: string;
+      delta?: string;
+      blockedReason?: string;
+    }>;
+  }>;
+};
+
 export type MessageRecord = {
   topic: string;
   partition: number;
@@ -244,6 +287,26 @@ export const api = {
     request<ConsumerGroup[]>(`/api/clusters/${clusterId}/consumer-groups`),
   consumerGroupLag: (clusterId: string, groupId: string) =>
     request<ConsumerGroupLag>(`/api/clusters/${clusterId}/consumer-groups/${encodeURIComponent(groupId)}/lag`),
+  previewOffsetReset: (clusterId: string, groupId: string, body: ConsumerOffsetResetRequest) =>
+    request<ConsumerOffsetResetPreview>(
+      `/api/clusters/${clusterId}/consumer-groups/${encodeURIComponent(groupId)}/offset-reset/preview`,
+      {
+        method: "POST",
+        body: JSON.stringify(body)
+      }
+    ),
+  executeOffsetReset: (clusterId: string, groupId: string, body: ConsumerOffsetResetRequest & { reviewToken: string }) =>
+    request<{ accepted: true; reviewToken: string; summary: ConsumerOffsetResetPreview["summary"] }>(
+      `/api/clusters/${clusterId}/consumer-groups/${encodeURIComponent(groupId)}/offset-reset/execute`,
+      {
+        method: "POST",
+        headers: {
+          "x-eventhelm-actor": actor,
+          "x-eventhelm-confirm": "true"
+        },
+        body: JSON.stringify(body)
+      }
+    ),
   collectors: () => request<CollectorState[]>("/api/collectors"),
   audit: () => request<AuditEvent[]>("/api/audit"),
   agents: (clusterId: string) => request<AgentRun>(`/api/clusters/${clusterId}/agents`),

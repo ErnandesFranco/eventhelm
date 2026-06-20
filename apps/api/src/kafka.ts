@@ -1,5 +1,15 @@
 import { Kafka, logLevel } from "kafkajs";
-import type { ClusterConfig, ConsumerGroupLag, ConsumerGroupSummary, PartitionPlacement, RebalancePlan, TopicSummary } from "./types.js";
+import { buildOffsetResetPreview } from "./offsetReset.js";
+import type {
+  ClusterConfig,
+  ConsumerGroupLag,
+  ConsumerGroupSummary,
+  ConsumerOffsetResetPreview,
+  ConsumerOffsetResetRequest,
+  PartitionPlacement,
+  RebalancePlan,
+  TopicSummary
+} from "./types.js";
 
 type KafkaAdmin = ReturnType<ReturnType<typeof createKafka>["admin"]>;
 type GroupDescription = {
@@ -212,6 +222,76 @@ export async function describeConsumerGroupLag(cluster: ClusterConfig, groupId: 
   } finally {
     await admin.disconnect();
   }
+}
+
+export async function previewConsumerGroupOffsetReset(
+  cluster: ClusterConfig,
+  groupId: string,
+  request: ConsumerOffsetResetRequest
+): Promise<ConsumerOffsetResetPreview> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    return buildConsumerGroupOffsetResetPreview(admin, groupId, request);
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+export async function executeConsumerGroupOffsetReset(
+  cluster: ClusterConfig,
+  groupId: string,
+  request: ConsumerOffsetResetRequest,
+  reviewToken: string
+): Promise<ConsumerOffsetResetPreview> {
+  const admin = createKafka(cluster).admin();
+  await admin.connect();
+  try {
+    const preview = await buildConsumerGroupOffsetResetPreview(admin, groupId, request);
+    if (preview.reviewToken !== reviewToken) {
+      throw new Error("Offset reset preview is stale. Generate a fresh preview before executing.");
+    }
+    if (!preview.executable) {
+      throw new Error(preview.warnings[0] ?? "Offset reset preview is not executable.");
+    }
+
+    for (const topic of preview.topics) {
+      await admin.setOffsets({
+        groupId,
+        topic: topic.topic,
+        partitions: topic.partitions.map((partition) => ({
+          partition: partition.partition,
+          offset: partition.proposedOffset
+        }))
+      });
+    }
+
+    return preview;
+  } finally {
+    await admin.disconnect();
+  }
+}
+
+async function buildConsumerGroupOffsetResetPreview(
+  admin: KafkaAdmin,
+  groupId: string,
+  request: ConsumerOffsetResetRequest
+) {
+  const described = await admin.describeGroups([groupId]);
+  const group = described.groups.find((candidate) => candidate.groupId === groupId) as GroupDescription | undefined;
+  if (!group) {
+    throw new Error(`Consumer group '${groupId}' was not found`);
+  }
+
+  const [committedTopic] = await admin.fetchOffsets({ groupId, topics: [request.topic] });
+  const logOffsets = await admin.fetchTopicOffsets(request.topic);
+
+  return buildOffsetResetPreview({
+    group,
+    request,
+    committedTopic: committedTopic ?? { topic: request.topic, partitions: [] },
+    logOffsets
+  });
 }
 
 async function buildConsumerGroupLag(admin: KafkaAdmin, group: GroupDescription): Promise<ConsumerGroupLag> {

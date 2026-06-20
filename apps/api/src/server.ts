@@ -12,9 +12,11 @@ import {
   createTopic,
   describeConsumerGroupLag,
   describeCluster,
+  executeConsumerGroupOffsetReset,
   listConsumerGroups,
   listPartitionPlacements,
   listTopics,
+  previewConsumerGroupOffsetReset,
   produceMessage
 } from "./kafka.js";
 import { buildDiskRebalancePlan } from "./rebalance.js";
@@ -72,6 +74,38 @@ function assertRebalancePlanCurrent(plan: RebalancePlan, placements: PartitionPl
 function sameReplicas(left: number[], right: number[]) {
   return left.length === right.length && left.every((replica, index) => replica === right[index]);
 }
+
+const offsetResetRequestSchema = z
+  .discriminatedUnion("mode", [
+    z.object({
+      mode: z.literal("earliest"),
+      topic: z.string().min(1),
+      partitions: z.array(z.coerce.number().int().nonnegative()).optional()
+    }),
+    z.object({
+      mode: z.literal("latest"),
+      topic: z.string().min(1),
+      partitions: z.array(z.coerce.number().int().nonnegative()).optional()
+    }),
+    z.object({
+      mode: z.literal("absolute"),
+      topic: z.string().min(1),
+      partitions: z.array(z.coerce.number().int().nonnegative()).optional(),
+      offset: z
+        .union([z.string(), z.number()])
+        .transform(String)
+        .refine((offset) => /^\d+$/.test(offset), "Absolute offset must be a non-negative integer.")
+    })
+  ])
+  .superRefine((body, context) => {
+    if (body.topic.startsWith("__")) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "EventHelm will not reset offsets for internal Kafka topics.",
+        path: ["topic"]
+      });
+    }
+  });
 
 app.get("/health", async () => ({
   ok: true,
@@ -166,6 +200,51 @@ app.get("/api/clusters/:clusterId/consumer-groups", async (request) => {
 app.get("/api/clusters/:clusterId/consumer-groups/:groupId/lag", async (request) => {
   const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
   return describeConsumerGroupLag(getCluster(params.clusterId), params.groupId);
+});
+
+app.post("/api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/preview", async (request) => {
+  const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
+  const body = offsetResetRequestSchema.parse(request.body);
+  return previewConsumerGroupOffsetReset(getCluster(params.clusterId), params.groupId, body);
+});
+
+app.post("/api/clusters/:clusterId/consumer-groups/:groupId/offset-reset/execute", async (request) => {
+  assertWriteAllowed(request);
+  const params = z.object({ clusterId: z.string(), groupId: z.string().min(1) }).parse(request.params);
+  const body = offsetResetRequestSchema
+    .and(
+      z.object({
+        reviewToken: z.string().length(64)
+      })
+    )
+    .parse(request.body);
+
+  try {
+    const preview = await executeConsumerGroupOffsetReset(getCluster(params.clusterId), params.groupId, body, body.reviewToken);
+    await recordAudit({
+      actor: actorFromRequest(request),
+      action: "consumer.offset_reset",
+      clusterId: params.clusterId,
+      resourceType: "consumer-group",
+      resourceName: params.groupId,
+      details: {
+        topic: preview.request.topic,
+        mode: preview.request.mode,
+        partitions: preview.summary.partitions,
+        messagesSkipped: preview.summary.messagesSkipped,
+        messagesToReplay: preview.summary.messagesToReplay,
+        reviewToken: preview.reviewToken
+      }
+    });
+
+    return {
+      accepted: true,
+      reviewToken: preview.reviewToken,
+      summary: preview.summary
+    };
+  } catch (error) {
+    throw badRequest(error instanceof Error ? error.message : String(error));
+  }
 });
 
 app.post("/api/clusters/:clusterId/messages/produce", async (request) => {
