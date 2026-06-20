@@ -54,6 +54,20 @@ test("cluster breakglass scope is not granted by generic write", () => {
   );
 });
 
+test("token mode ignores caller supplied actor headers", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token",
+      EVENTHELM_API_TOKENS_JSON: JSON.stringify([
+        { token: "actor-token", actor: "configured-operator", scopes: ["read", "topic:write"] }
+      ])
+    },
+    () => {
+      assert.equal(actorFromRequest(requestWithToken("actor-token", false, "spoofed-operator")), "configured-operator");
+    }
+  );
+});
+
 test("read auth requires read scope in token mode", () => {
   withEnv(
     {
@@ -105,10 +119,29 @@ test("write rate limit is enforced per actor and scope", () => {
   );
 });
 
-function requestWithToken(token: string, confirmed = false): FastifyRequest {
+test("write rate limit follows token when actor headers change", () => {
+  withEnv(
+    {
+      EVENTHELM_AUTH_MODE: "token",
+      EVENTHELM_API_TOKENS_JSON: JSON.stringify([
+        { token: "limited-spoof-token", actor: "limited-operator", scopes: ["read", "topic:write"] }
+      ]),
+      EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE: "2"
+    },
+    () => {
+      assert.doesNotThrow(() => assertWriteAllowed(requestWithToken("limited-spoof-token", false, "first-header"), "topic:write"));
+      assert.doesNotThrow(() => assertWriteAllowed(requestWithToken("limited-spoof-token", false, "second-header"), "topic:write"));
+      const error = captureError(() => assertWriteAllowed(requestWithToken("limited-spoof-token", false, "third-header"), "topic:write"));
+      assert.equal(error.statusCode, 429);
+    }
+  );
+});
+
+function requestWithToken(token: string, confirmed = false, actor?: string): FastifyRequest {
   return {
     headers: {
       authorization: `Bearer ${token}`,
+      ...(actor ? { "x-eventhelm-actor": actor } : {}),
       ...(confirmed ? { "x-eventhelm-confirm": "true" } : {})
     }
   } as unknown as FastifyRequest;

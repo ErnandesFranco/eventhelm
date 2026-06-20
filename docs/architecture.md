@@ -30,7 +30,7 @@ The API owns:
 - Versioned database migrations with checksum validation in `schema_migrations`.
 - Later: OIDC/JWT identity, policy checks, approval workflows.
 
-Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
+Token mode supports scoped API tokens from `EVENTHELM_API_TOKENS_JSON` for read-only, operator, rebalance, and admin-style automation. The legacy `EVENTHELM_API_TOKEN` remains an admin token for compatibility. In token mode, audit actors and write-rate principals are derived from the authenticated token rather than caller-supplied actor headers. This is a local/deployment-token authorization layer, not a replacement for per-user identity.
 
 Mutating API routes pass through a shared write guard that checks scope, optional write confirmation, and an optional in-memory per-actor/per-scope rate limit. Distributed rate limits and per-user quotas still belong in the future identity/control-plane layer.
 

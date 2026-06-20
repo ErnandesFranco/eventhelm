@@ -143,6 +143,7 @@ Current protections:
 - Collectors support a shared `EVENTHELM_COLLECTOR_TOKEN`.
 - The API supports `EVENTHELM_AUTH_MODE=token` with `EVENTHELM_API_TOKEN`.
 - The API also supports scoped tokens through `EVENTHELM_API_TOKENS_JSON`; scopes include `read`, `cluster:write`, `cluster:breakglass`, `topic:write`, `message:write`, `consumer:write`, `rebalance:plan`, `rebalance:review`, `rebalance:execute`, `agent:run`, `write`, and `admin`.
+- In token mode, audit actors and write-rate principals are derived from the authenticated token instead of caller-supplied actor headers.
 - In token mode, read auth is required by default unless `EVENTHELM_REQUIRE_READ_AUTH=false` is set.
 - Mutating endpoints support per-actor/per-scope write rate limits with `EVENTHELM_WRITE_RATE_LIMIT_PER_MINUTE`.
 - Cluster configs, audit events, collector state, rebalance plans, and advisor-agent runs are persisted in Postgres in the Docker lab.

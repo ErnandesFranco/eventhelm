@@ -1,4 +1,5 @@
 import type { FastifyRequest } from "fastify";
+import { createHash } from "node:crypto";
 import { getApiTokens, getCollectorToken, getSecurityStatus, getWriteRateLimitPerMinute } from "./config.js";
 import type { ApiTokenConfig, AuthScope } from "./types.js";
 
@@ -58,11 +59,17 @@ function requireToken(request: FastifyRequest): ApiTokenConfig {
 }
 
 export function actorFromRequest(request: FastifyRequest): string {
+  const security = getSecurityStatus();
+  const tokenConfig = tokenConfigFromRequest(request);
+  if (security.authMode === "token" && tokenConfig) {
+    return tokenConfig.actor ?? "api-token";
+  }
+
   const actor = request.headers["x-eventhelm-actor"] ?? request.headers["x-brokara-actor"];
   if (Array.isArray(actor)) {
-    return actor[0] ?? tokenConfigFromRequest(request)?.actor ?? "system";
+    return actor[0] ?? tokenConfig?.actor ?? "system";
   }
-  return actor ?? tokenConfigFromRequest(request)?.actor ?? "system";
+  return actor ?? tokenConfig?.actor ?? "system";
 }
 
 export function assertReadAllowed(request: FastifyRequest) {
@@ -102,16 +109,24 @@ function assertWriteRateLimit(request: FastifyRequest, scope: AuthScope) {
 
   const now = Date.now();
   const windowStart = now - 60_000;
-  const actor = actorFromRequest(request);
-  const key = `${actor}\u0000${scope}`;
+  const key = `${rateLimitPrincipal(request)}\u0000${scope}`;
   const bucket = (writeRateBuckets.get(key) ?? []).filter((timestamp) => timestamp >= windowStart);
   if (bucket.length >= limit) {
     writeRateBuckets.set(key, bucket);
-    throw tooManyRequests(`Write rate limit exceeded for actor '${actor}' and scope '${scope}'.`);
+    throw tooManyRequests(`Write rate limit exceeded for principal '${actorFromRequest(request)}' and scope '${scope}'.`);
   }
 
   bucket.push(now);
   writeRateBuckets.set(key, bucket);
+}
+
+function rateLimitPrincipal(request: FastifyRequest) {
+  const security = getSecurityStatus();
+  const token = bearerToken(request);
+  if (security.authMode === "token" && token) {
+    return `token:${createHash("sha256").update(token).digest("hex").slice(0, 16)}`;
+  }
+  return `actor:${actorFromRequest(request)}`;
 }
 
 export function assertCollectorAllowed(request: FastifyRequest) {
